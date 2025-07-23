@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { fly, fade } from 'svelte/transition';
-    import { page } from '$app/stores'; // ✅ 1. IMPORT page store เข้ามา
+    import { page } from '$app/stores';
+    import { jwtToken } from '$lib/stores/auth';
 
 	let username = '';
 	let password = '';
@@ -10,6 +11,16 @@
 
     let isLeaving = false;
 
+	async function handleRegister() {
+		message = 'Registering...';
+		try {
+			const response = await fetch(`${apiBaseUrl}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+			const data = await response.json();
+			if (!response.ok) throw new Error(data.error || 'Something went wrong');
+			message = data.message + ' Please log in.';
+		} catch (error: any) { message = `Registration failed: ${error.message}`; }
+	}
+
 	async function handleLogin() {
 		message = '';
 		try {
@@ -17,7 +28,9 @@
 			const data = await response.json();
 			if (!response.ok) throw new Error(data.error || 'Something went wrong');
 			
-			localStorage.setItem('jwt_token', data.token);
+            // ✅ เปลี่ยนจากการใช้ localStorage มาอัปเดต store แทน
+			jwtToken.set(data.token);
+
             isLeaving = true; 
             setTimeout(() => { goto('/files'); }, 400);
 
@@ -33,7 +46,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
 </svelte:head>
 
-<!-- ✅ 2. ห่อเนื้อหาทั้งหมดด้วย {#key} block -->
+<!-- ใช้ {#key} block เพื่อบังคับให้ transition ทำงานทุกครั้งที่กลับมาหน้านี้ -->
 {#key $page.url.pathname}
     <div class="login-container">
         {#if !isLeaving}

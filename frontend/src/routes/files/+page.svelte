@@ -2,205 +2,233 @@
     import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import * as tus from 'tus-js-client';
-	import { Folder, FileText, UploadCloud, Trash2, Home, ChevronRight, Download, X, AlertCircle, Plus, CheckCircle, Loader } from 'lucide-svelte';
+	import { Folder, FileText, UploadCloud, Trash2, Home, ChevronRight, Download, X, AlertCircle, Plus, Clock, CheckCircle, XCircle, RotateCcw, Upload } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import { th } from 'date-fns/locale';
     import { fetchApi } from '$lib/api';
-	import { onMount } from 'svelte';
+	import { onMount, afterUpdate } from 'svelte';
     import { fly, fade } from 'svelte/transition';
 
 	// --- State Variables ---
 	let files: any[] = [];
 	let folders: any[] = [];
+	let items: any[] = [];
+	let recentFiles: any[] = [];
 	let error_message = '';
 	let showCreateFolderModal = false;
 	let newFolderName = '';
-    
-    // State สำหรับ Multi-file upload
-    let isBatchUploading = false;
-    let uploads: { id: number, file: File, progress: number, status: 'uploading' | 'processing' | 'success' | 'error', error?: string }[] = [];
-    let overallProgress = 0;
-    
-    // State สำหรับ Drag & Drop
     let draggedItem: any = null;
+    let isDraggingOver = false;
+    let uploadQueue: { id: number; file: File; progress: number; status: 'uploading' | 'preparing' | 'finalizing' | 'done' | 'error'; error?: string; path?: string; }[] = [];
+    let totalUploadProgress = 0;
+    let isUploading = false;
+    let selectedItems = new Set<string>();
 
-	// --- Computed State from URL ---
-	$: currentPath = $page.url.searchParams.get('path') || '';
-	$: breadcrumbs = [{ name: 'My Files', path: '' }].concat(
-		currentPath.split('/').filter(p => p).map((part, i, arr) => ({ name: part, path: arr.slice(0, i + 1).join('/') }))
+    let selectAllCheckbox: HTMLInputElement;
+
+	// --- Computed State ---
+	$: isTrashView = $page.url.searchParams.get('view') === 'trash';
+	$: currentPath = isTrashView ? '' : ($page.url.searchParams.get('path') || '');
+	$: inSelectionMode = selectedItems.size > 0;
+    $: allSelected = items.length > 0 && selectedItems.size === items.length;
+	$: breadcrumbs = [{ name: 'My Files', path: '/files' }].concat(
+		currentPath.split('/').filter(p => p).map((part, i, arr) => ({ name: part, path: `/files?path=${arr.slice(0, i + 1).join('/')}` }))
 	);
+    $: {
+        if (files) {
+            recentFiles = [...files]
+                .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
+                .slice(0, 4);
+        }
+    }
+    $: {
+        if (uploadQueue.length > 0) {
+            const total = uploadQueue.reduce((acc, curr) => acc + curr.progress, 0);
+            totalUploadProgress = total / uploadQueue.length;
+        } else {
+            totalUploadProgress = 0;
+        }
+    }
+
+    afterUpdate(() => {
+        if (selectAllCheckbox) {
+            selectAllCheckbox.indeterminate = selectedItems.size > 0 && !allSelected;
+        }
+    });
 
 	// --- Data Fetching ---
-	async function fetchItems() {
+	async function fetchData() {
         error_message = '';
 		try {
-			const res = await fetchApi(`/api/files?path=${encodeURIComponent(currentPath)}`);
+			const endpoint = isTrashView ? '/api/trash' : `/api/files?path=${encodeURIComponent(currentPath)}`;
+			const res = await fetchApi(endpoint);
 			if (!res.ok) {
                 const errData = await res.json();
                 throw new Error(errData.error || 'Failed to fetch items');
             }
 			const allItems = await res.json() || [];
-			folders = allItems.filter((item: any) => item.isDir).sort((a: any, b: any) => a.name.localeCompare(b.name));
-			files = allItems.filter((item: any) => !item.isDir).sort((a: any, b: any) => (a.originalName || '').localeCompare(b.originalName || ''));
+			folders = allItems.filter(item => item.isDir).sort((a,b) => a.name.localeCompare(b.name));
+			files = allItems.filter(item => !item.isDir).sort((a,b) => (a.originalName || '').localeCompare(b.originalName || ''));
+            items = [...folders, ...files];
 		} catch (error: any) {
-			console.error("Fetch Items Error:", error);
-			error_message = `Could not load file list: ${error.message}`;
+			console.error("Fetch Error:", error);
+			error_message = `Could not load items: ${error.message}`;
 		}
 	}
-	onMount(fetchItems);
-	$: if ($page.url) { fetchItems(); }
+	$: if ($page.url) { fetchData(); selectedItems.clear(); }
 
-	// --- Core Functions ---
-	async function handleCreateFolder() {
-		if (!newFolderName.trim()) return;
-		try {
-			await fetchApi(`/api/folders?path=${encodeURIComponent(currentPath)}`, {
-				method: 'POST',
-				body: JSON.stringify({ folderName: newFolderName.trim() })
-			});
-			showCreateFolderModal = false;
-			newFolderName = '';
-			await fetchItems();
-		} catch (error: any) { alert(`Error creating folder: ${error.message}`); }
-	}
-	
-    function handleFileSelect(event: Event) {
+	// --- Handlers for Selection ---
+    function toggleSelect(path: string) {
+        if (selectedItems.has(path)) {
+            selectedItems.delete(path);
+        } else {
+            selectedItems.add(path);
+        }
+        selectedItems = selectedItems;
+    }
+    function toggleSelectAll() {
+        if (allSelected) {
+            selectedItems.clear();
+        } else {
+            items.forEach(item => selectedItems.add(item.path));
+        }
+        selectedItems = selectedItems;
+    }
+    async function handleBulkDelete() {
+        if (!confirm(`Are you sure you want to move ${selectedItems.size} items to the trash?`)) return;
+        try {
+            await fetchApi('/api/items/bulk-delete', {
+                method: 'POST',
+                body: JSON.stringify({ paths: Array.from(selectedItems) })
+            });
+            selectedItems.clear();
+            await fetchData();
+        } catch (e: any) {
+            alert(`Error moving items to trash: ${e.message}`);
+        }
+    }
+
+	// --- Drag & Drop Upload Handlers ---
+    function handleUploadDragOver(event: DragEvent) {
+        event.preventDefault();
+        if (!draggedItem && !isTrashView) {
+            isDraggingOver = true;
+        }
+    }
+    function handleUploadDragLeave() {
+        isDraggingOver = false;
+    }
+    function handleUploadDrop(event: DragEvent) {
+        event.preventDefault();
+        isDraggingOver = false;
+        if (!draggedItem && event.dataTransfer?.files) {
+            startMultipleUploads(event.dataTransfer.files);
+        }
+    }
+
+	// --- Upload Logic ---
+	function handleFileSelect(event: Event) {
         const input = event.target as HTMLInputElement;
-		if (input.files && input.files.length > 0) {
-			startBatchUpload(input.files);
-		}
+		if (input.files && input.files.length > 0) { startMultipleUploads(input.files); }
 		input.value = '';
 	}
-
-    function startBatchUpload(fileList: FileList) {
-        isBatchUploading = true;
-        uploads = Array.from(fileList).map((file, index) => ({
-            id: Date.now() + index,
-            file: file,
-            progress: 0,
-            status: 'uploading'
+    function handleFolderSelect(event: Event) {
+        const input = event.target as HTMLInputElement;
+		if (input.files && input.files.length > 0) { startMultipleUploads(input.files); }
+		input.value = '';
+    }
+	async function startMultipleUploads(fileList: FileList) {
+        if (isTrashView) return;
+        isUploading = true;
+        const newUploads = Array.from(fileList).map(file => ({
+            id: Date.now() + Math.random(), file, progress: 0, status: 'preparing' as const, path: (file as any).webkitRelativePath || file.name
         }));
-        overallProgress = 0;
-
-        const uploadPromises = uploads.map(uploadItem => 
-            new Promise<void>((resolve, reject) => {
-                const upload = new tus.Upload(uploadItem.file, {
-                    endpoint: `http://localhost:8080/uploads/`,
-                    metadata: { filename: uploadItem.file.name, filetype: uploadItem.file.type },
-                    onProgress: (bytes, total) => {
-                        uploadItem.progress = (bytes / total) * 100;
-                        const totalUploaded = uploads.reduce((sum, u) => sum + u.progress, 0);
-                        overallProgress = totalUploaded / uploads.length;
-                    },
-                    onError: (error) => {
-                        uploadItem.status = 'error';
-                        uploadItem.error = error.message;
-                        reject(error);
-                    },
-                    onSuccess: async () => {
-                        uploadItem.status = 'processing';
-                        const uploadId = upload.url?.split('/').pop();
-                        if (!uploadId) {
-                            const err = new Error('Could not get file ID to finalize.');
-                            uploadItem.status = 'error';
-                            uploadItem.error = err.message;
-                            reject(err);
-                            return;
-                        }
-
-                        try {
-                            const res = await fetchApi(`/api/finalize-upload`, {
-                                method: 'POST',
-                                body: JSON.stringify({ uploadId, destinationPath: currentPath })
-                            });
-                            if (!res.ok) {
-                                const errData = await res.json();
-                                throw new Error(errData.error || "Server finalize error");
-                            }
-                            uploadItem.status = 'success';
-                            resolve();
-                        } catch (finalizeError: any) {
-                            uploadItem.status = 'error';
-                            uploadItem.error = finalizeError.message;
-                            reject(finalizeError);
-                        }
-                    }
-                });
-                upload.start();
-            })
-        );
-
-        Promise.allSettled(uploadPromises).then(() => {
-            fetchItems();
-            setTimeout(() => {
-                const stillProcessing = uploads.some(u => u.status === 'uploading' || u.status === 'processing');
-                if (!stillProcessing) {
-                    isBatchUploading = false;
+        uploadQueue = [...uploadQueue, ...newUploads];
+        
+        const dirPaths = new Set<string>();
+        newUploads.forEach(upload => {
+            const pathParts = upload.path.split('/');
+            if (pathParts.length > 1) {
+                for (let i = 1; i < pathParts.length; i++) {
+                    dirPaths.add(pathParts.slice(0, i).join('/'));
                 }
-            }, 5000);
+            }
+        });
+
+        if (dirPaths.size > 0) {
+            const createFolderPromises = Array.from(dirPaths).map(path => 
+                fetchApi(`/api/folders/structure`, { method: 'POST', body: JSON.stringify({ path: `${currentPath}/${path}`.replace(/^\//, '') }) })
+            );
+            await Promise.allSettled(createFolderPromises);
+        }
+        
+        uploadQueue.forEach(item => { if (item.status === 'preparing') item.status = 'uploading'; });
+        uploadQueue = [...uploadQueue];
+
+        const uploadPromises = newUploads.map(uploadItem => startSingleUpload(uploadItem));
+        await Promise.allSettled(uploadPromises);
+        await fetchData();
+        
+        setTimeout(() => {
+            uploadQueue = uploadQueue.filter(item => item.status !== 'done' && item.status !== 'error');
+            if (uploadQueue.length === 0) { isUploading = false; }
+        }, 5000);
+    }
+    function startSingleUpload(uploadItem: typeof uploadQueue[0]) {
+        return new Promise((resolve, reject) => {
+            const pathParts = (uploadItem.path || '').split('/');
+            pathParts.pop();
+            const folderPath = pathParts.join('/');
+            const destinationPath = currentPath ? `${currentPath}/${folderPath}`.replace(/^\//, '') : folderPath;
+            const upload = new tus.Upload(uploadItem.file, {
+                endpoint: `http://localhost:8080/uploads/`,
+                retryDelays: [0, 3000, 5000],
+                metadata: { filename: uploadItem.file.name, filetype: uploadItem.file.type },
+                onProgress: (bytes, total) => {
+                    const index = uploadQueue.findIndex(item => item.id === uploadItem.id);
+                    if (index !== -1) { uploadQueue[index].progress = (bytes / total) * 100; uploadQueue = [...uploadQueue]; }
+                },
+                onError: (error) => {
+                    const index = uploadQueue.findIndex(item => item.id === uploadItem.id);
+                    if (index !== -1) { uploadQueue[index].status = 'error'; uploadQueue[index].error = error.message; uploadQueue = [...uploadQueue]; }
+                    reject(error);
+                },
+                onSuccess: async () => {
+                    let index = uploadQueue.findIndex(item => item.id === uploadItem.id);
+                    if (index !== -1) { uploadQueue[index].status = 'finalizing'; uploadQueue = [...uploadQueue]; }
+                    const uploadId = upload.url?.split('/').pop();
+                    if (!uploadId) {
+                        if (index !== -1) { uploadQueue[index].status = 'error'; uploadQueue[index].error = 'Could not get finalize ID.'; uploadQueue = [...uploadQueue]; }
+                        reject(new Error('Finalize ID missing'));
+                        return;
+                    }
+                    try {
+                        await fetchApi(`/api/finalize-upload`, { method: 'POST', body: JSON.stringify({ uploadId, destinationPath }) });
+                        index = uploadQueue.findIndex(item => item.id === uploadItem.id);
+                        if (index !== -1) { uploadQueue[index].status = 'done'; uploadQueue = [...uploadQueue]; }
+                        resolve(true);
+                    } catch (finalizeError: any) {
+                        index = uploadQueue.findIndex(item => item.id === uploadItem.id);
+                        if (index !== -1) { uploadQueue[index].status = 'error'; uploadQueue[index].error = finalizeError.message; uploadQueue = [...uploadQueue]; }
+                        reject(finalizeError);
+                    }
+                }
+            });
+            upload.start();
         });
     }
 
-	async function handleDelete(item: any) {
-		const itemName = item.isDir ? item.name : item.originalName;
-		if (!confirm(`Are you sure you want to move "${itemName}" to the trash?`)) return;
-		try {
-			await fetchApi(`/api/items/${item.path}`, { method: 'DELETE' });
-			await fetchItems();
-		} catch (error: any) {
-			alert(`Could not move item to trash: ${error.message}`);
-		}
-	}
-
-    function getDownloadUrl(item: any) {
-        const token = localStorage.getItem('jwt_token');
-        const endpoint = item.isDir ? 'download-folder' : 'download';
-        return `http://localhost:8080/api/${endpoint}/${item.path}?token=${token}`;
-    }
-
-    function formatBytes(bytes: number, decimals = 2) {
-		if (!+bytes) return '0 Bytes';
-		const k = 1024;
-		const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals < 0 ? 0 : decimals))} ${sizes[i]}`;
-	}
-
-    // --- Drag & Drop Functions ---
-    function handleDragStart(item: any) {
-        draggedItem = item;
-    }
-
-    function handleDragEnd() {
-        draggedItem = null;
-    }
-
-    async function handleDrop(destinationFolder: any) {
-        if (draggedItem && draggedItem.path !== destinationFolder.path) {
-            await handleMove(draggedItem, destinationFolder);
-        }
-        handleDragEnd();
-    }
-
-    async function handleMove(sourceItem: any, destinationFolder: any) {
-		try {
-			const res = await fetchApi(`/api/move`, {
-				method: 'POST',
-				body: JSON.stringify({ 
-                    sourcePath: sourceItem.path, 
-                    destinationFolder: destinationFolder.path 
-                })
-			});
-			if (!res.ok) { 
-                const errorData = await res.json();
-                throw new Error(errorData.error || 'Failed to move item');
-            }
-            await fetchItems(); 
-		} catch (error: any) { 
-			alert(`Error moving item: ${error.message}`);
-			await fetchItems();
-		}
-	}
+	// --- Other Handlers ---
+	async function handleSoftDelete(item: any) { if (!confirm(`Move "${item.originalName||item.name}" to trash?`)) return; await fetchApi(`/api/items/${item.path}`,{method:'DELETE'}); await fetchData(); }
+	async function handleRestore(item: any) { if (!confirm(`Restore "${item.originalName||item.name}"?`)) return; await fetchApi('/api/trash/restore',{method:'POST',body:JSON.stringify({path:item.path})}); await fetchData(); }
+	async function handlePermanentDelete(item: any) { if (!confirm(`Permanently delete "${item.originalName||item.name}"? This cannot be undone.`)) return; await fetchApi(`/api/trash/${item.path}`,{method:'DELETE'}); await fetchData(); }
+    function handleDragStart(item: any) { draggedItem = item; }
+    function handleDragEnd() { draggedItem = null; }
+    async function handleDrop(destinationFolder: any) { if (draggedItem && draggedItem.path !== destinationFolder.path) { await handleMove(draggedItem, destinationFolder); } handleDragEnd(); }
+    async function handleMove(sourceItem: any, destinationFolder: any) { await fetchApi(`/api/move`,{method:'POST',body:JSON.stringify({sourcePath:sourceItem.path,destinationFolder:destinationFolder.path})}); await fetchData(); }
+	async function handleCreateFolder() { if (!newFolderName.trim()) return; await fetchApi(`/api/folders?path=${encodeURIComponent(currentPath)}`,{method:'POST',body:JSON.stringify({folderName:newFolderName.trim()})}); showCreateFolderModal=false; newFolderName=''; await fetchData(); }
+    function getDownloadUrl(item: any) { const token = localStorage.getItem('jwt_token'); const endpoint = item.isDir ? 'download-folder' : 'download'; return `http://localhost:8080/api/${endpoint}/${item.path}?token=${token}`; }
+    function formatBytes(bytes: number, decimals=2) { if(!+bytes)return"0 Bytes";const k=1024,i=Math.floor(Math.log(bytes)/Math.log(k));return`${parseFloat((bytes/Math.pow(k,i)).toFixed(decimals))} ${["Bytes","KB","MB","GB","TB"][i]}` }
 </script>
 
 <!-- New Folder Modal -->
@@ -217,196 +245,166 @@
 	</div>
 {/if}
 
+<!-- Selection Action Bar -->
+{#if inSelectionMode && !isTrashView}
+    <div class="selection-bar" transition:fly={{ y: 20, duration: 300 }}>
+        <div class="selection-info">
+            <span>{selectedItems.size} selected</span>
+            <button class="deselect-btn" on:click={() => selectedItems.clear()}>Deselect all</button>
+        </div>
+        <div class="selection-actions">
+            <button class="action-btn-sm" disabled><Download size=16/> Download</button>
+            <button class="action-btn-sm delete" on:click={handleBulkDelete}><Trash2 size=16/> Move to Trash</button>
+        </div>
+    </div>
+{/if}
+
 <!-- Main Content Area -->
-<div class="page-header">
-    <div class="breadcrumbs">
-        {#each breadcrumbs as crumb, i}
-            <a href={crumb.path ? `/files?path=${crumb.path}` : '/files'}>
-                {#if i === 0}<Home size=16/>{:else}<span>{crumb.name}</span>{/if}
-            </a>
-            {#if i < breadcrumbs.length - 1}<ChevronRight size=16 class="separator" />{/if}
-        {/each}
-    </div>
-    <div class="actions">
-		<button class="action-btn secondary" on:click={() => showCreateFolderModal = true}>
-			<Plus size=16 /> New Folder
-		</button>
-		<label class="action-btn primary">
-			<UploadCloud size=16/> Upload Files
-			<input type="file" hidden multiple on:change={handleFileSelect}/>
-		</label>
-    </div>
-</div>
-
-{#if error_message}
-    <div class="error-banner"><AlertCircle size=18/> {error_message}</div>
-{/if}
-
-<div class="file-grid-container">
-    <div class="grid-header">
-        <div class="header-name">Name</div>
-        <div class="header-size">Size</div>
-        <div class="header-modified">Last Modified</div>
-    </div>
-
-    <!-- Folders -->
-    {#each folders as folder (folder.path)}
-        <div 
-            class="grid-row is-folder" 
-            class:drop-target={draggedItem && draggedItem.path !== folder.path}
-            on:click={() => goto(`/files?path=${folder.path}`)}
-            on:dragover|preventDefault
-            on:drop|preventDefault={() => handleDrop(folder)}
-            transition:fly={{ y: 20, duration: 300 }}
-        >
-            <div class="item-name"><Folder size=20 color="#5DADE2" /><span>{folder.name}</span></div>
-            <div class="item-size">--</div>
-            <div class="item-modified">{formatDistanceToNow(new Date(folder.modified),{addSuffix:true,locale:th})}</div>
-            <div class="row-actions">
-				<a href={getDownloadUrl(folder)} class="action-icon" title="Download Folder as .zip" on:click|stopPropagation><Download size=18 /></a>
-				<button class="action-icon" title="Move to Trash" on:click|preventDefault|stopPropagation={() => handleDelete(folder)}><Trash2 size=18 /></button>
-            </div>
+<div class="main-content-area" on:dragover={handleUploadDragOver} on:dragleave={handleUploadDragLeave} on:drop={handleUploadDrop}>
+    {#if isDraggingOver}
+        <div class="dropzone-overlay">
+            <div class="dropzone-message"><UploadCloud size=64 /><span>Drop files to upload</span></div>
         </div>
-    {/each}
-
-    <!-- Files -->
-    {#each files as file (file.path)}
-        <div 
-            class="grid-row"
-            class:dragging={draggedItem?.path === file.path}
-            draggable="true"
-            on:dragstart={() => handleDragStart(file)}
-            on:dragend={handleDragEnd}
-            transition:fly={{ y: 20, duration: 300 }}
-        >
-            <div class="item-name"><FileText size=20 color="#6C757D" /><span>{file.originalName}</span></div>
-            <div class="item-size">{formatBytes(file.size)}</div>
-            <div class="item-modified">{formatDistanceToNow(new Date(file.modified),{addSuffix:true,locale:th})}</div>
-            <div class="row-actions">
-				<a href={getDownloadUrl(file)} download={file.originalName} class="action-icon" title="Download File" on:click|stopPropagation><Download size=18 /></a>
-				<button class="action-icon" title="Move to Trash" on:click|preventDefault|stopPropagation={() => handleDelete(file)}><Trash2 size=18 /></button>
-            </div>
-        </div>
-    {/each}
-</div>
-
-{#if files.length === 0 && folders.length === 0 && !isBatchUploading && !error_message}
-    <div class="empty-state" in:fade>
-		<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather feather-folder"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-        <h3>This folder is empty</h3>
-        <p>Drop files here or use the upload button to get started.</p>
-    </div>
-{/if}
-
-<!-- Multi-file Upload Status Popup -->
-{#if isBatchUploading}
-<div class="upload-status-popup" transition:fly={{ y: 20, duration: 300 }}>
-    <div class="popup-header">
-        <h4>Uploading {uploads.length} items...</h4>
-        <button class="close-popup-btn" on:click={() => isBatchUploading = false}><X size=18 /></button>
-    </div>
-    <div class="overall-progress-container">
-        <div class="overall-progress-bar" style="width: {overallProgress}%"></div>
-    </div>
-    <div class="upload-list">
-        {#each uploads as upload (upload.id)}
-        <div class="upload-item">
-            <div class="item-icon">
-                {#if upload.status === 'uploading' || upload.status === 'processing'}
-                    <Loader size=18 class="spinner" />
-                {:else if upload.status === 'success'}
-                    <CheckCircle size=18 color="#198754" />
-                {:else if upload.status === 'error'}
-                    <AlertCircle size=18 color="#DC3545" />
-                {/if}
-            </div>
-            <div class="item-details">
-                <div class="item-filename">{upload.file.name}</div>
-                {#if upload.status === 'error'}
-                    <div class="item-error-msg">{upload.error}</div>
-                {:else}
-                    <div class="item-progress-bar-container">
-                        <div class="item-progress-bar" style="width: {upload.progress}%"></div>
+    {/if}
+    {#if isTrashView}
+        <div in:fade|local>
+            <div class="page-header"><h1>Trash</h1></div>
+            <p class="subtitle">Items in trash can be restored or deleted forever.</p>
+            {#if error_message}<div class="error-banner">{error_message}</div>{/if}
+            <div class="file-grid-container is-trash">
+                <div class="grid-header"><div>Name</div><div>Actions</div></div>
+                {#each items as item (item.path)}
+                    <div class="grid-row" transition:fade|local>
+                        <div class="item-name">
+                            {#if item.isDir}<Folder size=20 color="#5DADE2"/>{:else}<FileText size=20 color="#6C757D"/>{/if}
+                            <span>{item.originalName || item.name}</span>
+                        </div>
+                        <div class="row-actions">
+                            <button class="action-btn-sm restore" title="Restore" on:click={() => handleRestore(item)}><RotateCcw size=18/></button>
+                            <button class="action-btn-sm delete" title="Delete Forever" on:click={() => handlePermanentDelete(item)}><Trash2 size=18/></button>
+                        </div>
                     </div>
-                {/if}
+                {:else}
+                    <div class="empty-state"><Trash2 size=48/><h3>Trash is empty</h3></div>
+                {/each}
             </div>
         </div>
-        {/each}
-    </div>
+    {:else}
+        <div in:fade|local>
+            <div class="page-header">
+                <div class="breadcrumbs">{#each breadcrumbs as crumb, i}<a href={crumb.path}>{#if i === 0}<Home size=16/>{:else}<span>{crumb.name}</span>{/if}</a>{#if i < breadcrumbs.length - 1}<ChevronRight size=16 class="separator"/>{/if}{/each}</div>
+                <div class="actions">
+                    <label class="action-btn secondary"><Upload size=16/> Upload Folder<input type="file" hidden on:change={handleFolderSelect} webkitdirectory /></label>
+                    <label class="action-btn primary"><UploadCloud size=16/> Upload Files<input type="file" hidden on:change={handleFileSelect} multiple /></label>
+                </div>
+            </div>
+            {#if error_message}<div class="error-banner">{error_message}</div>{/if}
+            {#if isUploading && uploadQueue.length > 0}
+                <div class="upload-status-area">
+                    <div class="upload-header"><span>Uploading {uploadQueue.length} items</span><div class="total-progress-bar-container"><div class="total-progress-bar" style="width: {totalUploadProgress}%"></div></div></div>
+                    <div class="upload-list">{#each uploadQueue as upload (upload.id)}<div class="upload-item"><div class="upload-icon">{#if upload.status==='uploading'||upload.status==='finalizing'||upload.status==='preparing'}<UploadCloud size=20 class="spinner"/>{:else if upload.status==='done'}<CheckCircle size=20 color="#16a34a"/>{:else if upload.status==='error'}<XCircle size=20 color="#dc2626"/>{/if}</div><div class="upload-details"><span class="upload-name" title={upload.path}>{upload.path}</span>{#if upload.status!=='error'}<div class="item-progress-bar-container"><div class="item-progress-bar" style="width: {upload.progress}%" class:done={upload.status==='done'}></div></div>{:else}<span class="upload-error-text" title={upload.error}>{upload.error}</span>{/if}</div><div class="upload-progress-text">{#if upload.status==='done'}Done{:else if upload.status==='error'}Failed{:else if upload.status==='preparing'}Preparing...{:else}{Math.round(upload.progress)}%{/if}</div></div>{/each}</div>
+                </div>
+            {/if}
+            {#if recentFiles.length > 0 && currentPath === ''}
+                <h2 class="section-title"><Clock size=20 /><span>Recent Files</span></h2>
+                <div class="recents-grid">{#each recentFiles as file (file.path)}<div class="recent-card"><div class="card-icon"><FileText size=28 color="#6C757D"/></div><div class="card-details"><span class="card-name" title={file.originalName}>{file.originalName}</span><span class="card-meta">{formatBytes(file.size)}</span></div><div class="card-actions"><a href={getDownloadUrl(file)} download={file.originalName} class="action-icon" on:click|stopPropagation><Download size=18 /></a><button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(file)}><Trash2 size=18 /></button></div></div>{/each}</div>
+            {/if}
+            <h2 class="section-title">All Files & Folders</h2>
+            <div class="file-grid-container">
+                <div class="grid-header">
+                    <div class="header-select"><input type="checkbox" on:change={toggleSelectAll} bind:this={selectAllCheckbox} checked={allSelected} /></div>
+                    <div>Name</div><div>Size</div><div>Modified</div><div></div>
+                </div>
+                {#each folders as folder (folder.path)}
+                    <div class="grid-row is-folder" class:selected={selectedItems.has(folder.path)} class:drop-target={draggedItem&&draggedItem.path!==folder.path} on:click|self={()=>goto(`/files?path=${folder.path}`)} on:dragover|preventDefault on:drop|preventDefault={()=>handleDrop(folder)}>
+                        <div class="row-select" on:click|stopPropagation><input type="checkbox" checked={selectedItems.has(folder.path)} on:change={()=>toggleSelect(folder.path)}/></div>
+                        <div class="item-name"><Folder size=20 color="#5DADE2"/><span>{folder.name}</span></div>
+                        <div class="item-size">--</div><div class="item-modified">{formatDistanceToNow(new Date(folder.modified),{locale:th,addSuffix:true})}</div>
+                        <div class="row-actions"><a class="action-icon" href={getDownloadUrl(folder)} on:click|stopPropagation><Download size=18/></a><button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(folder)}><Trash2 size=18/></button></div>
+                    </div>
+                {/each}
+                {#each files as file (file.path)}
+                    <div class="grid-row" class:selected={selectedItems.has(file.path)} class:dragging={draggedItem?.path===file.path} draggable="true" on:dragstart={()=>handleDragStart(file)} on:dragend={handleDragEnd}>
+                        <div class="row-select" on:click|stopPropagation><input type="checkbox" checked={selectedItems.has(file.path)} on:change={()=>toggleSelect(file.path)}/></div>
+                        <div class="item-name"><FileText size=20 color="#6C757D"/><span>{file.originalName}</span></div>
+                        <div class="item-size">{formatBytes(file.size)}</div><div class="item-modified">{formatDistanceToNow(new Date(file.modified),{locale:th,addSuffix:true})}</div>
+                        <div class="row-actions"><a class="action-icon" href={getDownloadUrl(file)} download={file.originalName} on:click|stopPropagation><Download size=18/></a><button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(file)}><Trash2 size=18/></button></div>
+                    </div>
+                {/each}
+            </div>
+            {#if folders.length === 0 && files.length === 0 && !isUploading} 
+                <div class="empty-state"><Folder size=48/><h3>Folder is empty</h3></div> 
+            {/if}
+        </div>
+    {/if}
 </div>
-{/if}
 
 <style>
-/* --- Page Layout & Header --- */
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-.breadcrumbs { display: flex; align-items: center; gap: 0.25rem; font-size: 0.9rem; }
-.breadcrumbs a { display: flex; align-items: center; gap: 0.5rem; text-decoration: none; color: #6C757D; padding: 0.25rem 0.5rem; border-radius: 6px; transition: background-color 0.2s; }
-.breadcrumbs a:hover { background-color: #F1F5F9; }
-.separator { color: #E5E7EB; }
-.actions { display: flex; gap: 0.75rem; }
-.action-btn { padding: 0.6rem 1rem; border: 1px solid transparent; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s; }
-.action-btn.primary { background-color: #0d6efd; color: white; }
-.action-btn.primary:hover { background-color: #0b5ed7; }
-.action-btn.secondary { background-color: white; color: #343A40; border-color: #DEE2E6; }
-.action-btn.secondary:hover { border-color: #ADB5BD; background-color: #F8F9FA; }
-
-/* --- File Grid / List --- */
-.file-grid-container { border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden; }
-.grid-header { display: grid; grid-template-columns: 3fr 1fr 1.5fr 100px; align-items: center; padding: 0.75rem 1.5rem; background-color: #F9FAFB; font-size: 0.8rem; font-weight: 500; color: #6C757D; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #E5E7EB; }
-.header-name { grid-column: 1; }
-.header-size { grid-column: 2; text-align: right; }
-.header-modified { grid-column: 3; text-align: right; }
-.grid-row { display: grid; grid-template-columns: 3fr 1fr 1.5fr 100px; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #F3F4F6; transition: background-color 0.2s; text-decoration: none; color: inherit; }
-.grid-row:last-child { border-bottom: none; }
-.grid-row:hover { background-color: #F9FAFB; }
-.grid-row.is-folder { cursor: pointer; }
-.item-name { grid-column: 1; display: flex; align-items: center; gap: 1rem; font-weight: 500; color: #1F2937; }
-.item-size { grid-column: 2; text-align: right; color: #4B5563; }
-.item-modified { grid-column: 3; text-align: right; color: #4B5563; }
-
-/* --- Row Actions (Appear on Hover) --- */
-.row-actions { grid-column: 4; display: flex; justify-content: flex-end; gap: 0.5rem; opacity: 0; transition: opacity 0.2s ease-in-out; }
-.grid-row:hover .row-actions { opacity: 1; }
-.action-icon { background: none; border: none; padding: 0.25rem; color: #6C757D; cursor: pointer; border-radius: 4px; }
-.action-icon:hover { color: #0d6efd; background-color: #E9ECEF; }
-
-/* --- Drag and Drop Styles --- */
-.dragging { opacity: 0.5; background-color: #E9ECEF; }
-.drop-target { outline: 2px dashed #0d6efd; outline-offset: -2px; background-color: #E7F1FF; }
-
-/* --- Other States --- */
-.status-area { margin-bottom: 1rem; background-color: #F8F9FA; padding: 1rem; border-radius: 8px; }
-.progress-bar-container { width: 100%; height: 8px; background-color: #E9ECEF; border-radius: 4px; overflow: hidden; }
-.progress-bar { height: 100%; background-color: #0d6efd; border-radius: 4px; transition: width 0.3s ease; }
-.empty-state { text-align: center; padding: 4rem 2rem; color: #6C757D; }
-.empty-state svg { color: #ADB5BD; margin-bottom: 1rem; }
-.empty-state h3 { margin: 0; font-size: 1.25rem; color: #343A40; }
-.empty-state p { margin-top: 0.5rem; }
-.error-banner { background-color: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem; }
-
-/* --- Modal --- */
-.modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(9, 30, 66, 0.7); display: grid; place-items: center; z-index: 100; }
-.modal-content { position: relative; background: white; padding: 2rem; border-radius: 12px; width: 90%; max-width: 400px; }
-.modal-content h3 { margin: 0 0 1.5rem 0; font-size: 1.25rem; }
-.modal-content form { display: flex; flex-direction: column; gap: 1rem; }
-.modal-content input { padding: 0.75rem; border-radius: 6px; border: 1px solid #DEE2E6; font-size: 1rem; }
-.modal-content button { padding: 0.75rem; border-radius: 6px; border: none; background: #0d6efd; color: white; font-weight: 500; cursor: pointer; }
-.close-modal-btn { position: absolute; top: 0.75rem; right: 0.75rem; background: none; border: none; cursor: pointer; color: #6C757D; }
-
-/* --- Multi-file Upload Popup --- */
-.upload-status-popup { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 350px; background-color: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); border: 1px solid #E5E7EB; z-index: 1000; overflow: hidden; }
-.popup-header { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; border-bottom: 1px solid #E5E7EB; }
-.popup-header h4 { margin: 0; font-size: 0.9rem; font-weight: 600; }
-.close-popup-btn { background: none; border: none; cursor: pointer; color: #6C757D; padding: 0.25rem; }
-.overall-progress-container { width: 100%; height: 4px; }
-.overall-progress-bar { height: 100%; background-color: #0d6efd; transition: width 0.3s ease; }
-.upload-list { max-height: 200px; overflow-y: auto; padding: 0.5rem; }
-.upload-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem; }
-.item-icon .spinner { animation: spin 1.5s linear infinite; }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.item-details { flex-grow: 1; min-width: 0; }
-.item-filename { font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.item-error-msg { font-size: 0.75rem; color: #DC3545; }
-.item-progress-bar-container { width: 100%; height: 6px; background-color: #E9ECEF; border-radius: 3px; overflow: hidden; margin-top: 0.25rem; }
-.item-progress-bar { height: 100%; background-color: #6C757D; border-radius: 3px; transition: width 0.3s ease; }
+    .main-content-area { position: relative; height: 100%; }
+    .dropzone-overlay { position: absolute; inset: -2rem; background-color: rgba(239, 246, 255, 0.95); border: 3px dashed #0d6efd; border-radius: 12px; display: grid; place-items: center; z-index: 99; pointer-events: none; }
+    .dropzone-message { display: flex; flex-direction: column; align-items: center; gap: 1rem; color: #0b5ed7; font-size: 1.5rem; font-weight: 500; }
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+    h1 { font-size: 1.75rem; margin: 0; color: #1F2937; }
+    .subtitle { color: #6C757D; margin-top: 0.25rem; margin-bottom: 2rem; }
+    .breadcrumbs { display: flex; align-items: center; gap: 0.25rem; font-size: 0.9rem; }
+    .breadcrumbs a { display: flex; align-items: center; gap: 0.5rem; text-decoration: none; color: #6C757D; padding: 0.25rem 0.5rem; border-radius: 6px; }
+    .actions { display: flex; gap: 0.75rem; }
+    .action-btn { padding: 0.6rem 1rem; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; }
+    .action-btn.primary { background-color: #0d6efd; color: white; border: 1px solid transparent; }
+    .action-btn.secondary { background-color: white; color: #343A40; border: 1px solid #DEE2E6; }
+    .upload-status-area { margin-bottom: 2rem; background-color: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); }
+    .upload-header { padding: 1rem 1.5rem; border-bottom: 1px solid #E5E7EB; }
+    .upload-header span { font-weight: 500; }
+    .total-progress-bar-container { width: 100%; height: 8px; background-color: #E9ECEF; border-radius: 4px; overflow: hidden; margin-top: 0.75rem; }
+    .total-progress-bar { height: 100%; background-color: #0d6efd; border-radius: 4px; transition: width 0.3s ease; }
+    .upload-list { max-height: 200px; overflow-y: auto; padding: 0.5rem; }
+    .upload-item { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 1rem; padding: 0.75rem 1rem; }
+    .upload-icon .spinner { animation: spin 1.5s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .upload-details { overflow: hidden; }
+    .upload-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9rem; }
+    .item-progress-bar-container { width: 100%; height: 5px; background-color: #E9ECEF; border-radius: 2.5px; overflow: hidden; margin-top: 0.25rem; }
+    .item-progress-bar { height: 100%; background-color: #60a5fa; border-radius: 2.5px; transition: width 0.3s ease; }
+    .item-progress-bar.done { background-color: #22c55e; }
+    .upload-error-text { font-size: 0.8rem; color: #ef4444; }
+    .upload-progress-text { font-size: 0.85rem; font-weight: 500; }
+    .section-title { display: flex; align-items: center; gap: 0.75rem; font-size: 1.25rem; font-weight: 600; margin: 2rem 0 1rem 0; }
+    .recents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+    .recent-card { background: white; border: 1px solid #E5E7EB; border-radius: 12px; padding: 1rem; display: flex; align-items: center; gap: 1rem; position: relative; }
+    .card-details { overflow: hidden; }
+    .card-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-meta { font-size: 0.8rem; }
+    .card-actions { position: absolute; top: 0.5rem; right: 0.5rem; display: flex; gap: 0.25rem; opacity: 0; }
+    .recent-card:hover .card-actions { opacity: 1; }
+    .file-grid-container { border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden; }
+    .grid-header { display: grid; grid-template-columns: auto 3fr 1fr 1.5fr auto; padding: 0.75rem 1.5rem; background-color: #F9FAFB; font-size: 0.8rem; text-transform: uppercase; }
+    .grid-row { display: grid; grid-template-columns: auto 3fr 1fr 1.5fr auto; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #F3F4F6; }
+    .grid-row:hover { background-color: #F9FAFB; }
+    .grid-row.is-folder { cursor: pointer; }
+    .item-name { display: flex; align-items: center; gap: 1rem; font-weight: 500; }
+    .row-actions { opacity: 0; display: flex; justify-content: flex-end; gap: 0.5rem; }
+    .grid-row:hover .row-actions { opacity: 1; }
+    .action-icon { background: none; border: none; cursor: pointer; padding: 0.25rem; }
+    .dragging { opacity: 0.5; }
+    .drop-target { outline: 2px dashed #0d6efd; }
+    .empty-state { text-align: center; padding: 4rem; }
+    .selection-bar { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); width: auto; max-width: 600px; background-color: #2c3e50; color: white; border-radius: 12px; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+    .selection-info { display: flex; align-items: center; gap: 1rem; }
+    .deselect-btn { background: none; border: none; color: #95a5a6; cursor: pointer; }
+    .selection-actions { display: flex; gap: 0.75rem; }
+    .action-btn-sm { padding: 0.5rem 1rem; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; gap: 0.5rem; background-color: #34495e; color: white; border: 1px solid #4a627a; }
+    .action-btn-sm.delete:hover { background-color: #c0392b; }
+    .header-select, .row-select { padding-right: 1rem; display: flex; align-items: center; }
+    input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+    .grid-row.selected { background-color: #E7F1FF !important; }
+    .file-grid-container.is-trash .grid-header, .file-grid-container.is-trash .grid-row { grid-template-columns: 1fr auto; }
+    .file-grid-container.is-trash .row-actions { opacity: 1; }
+    .action-btn-sm.restore:hover { border-color: #4ade80; background-color: #f0fdf4; color: #166534; }
+    .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(9, 30, 66, 0.7); display: grid; place-items: center; z-index: 100; }
+    .modal-content { position: relative; background: white; padding: 2rem; border-radius: 12px; width: 90%; max-width: 400px; }
+    .modal-content h3 { margin: 0 0 1.5rem 0; font-size: 1.25rem; }
+    .modal-content form { display: flex; flex-direction: column; gap: 1rem; }
+    .modal-content input { padding: 0.75rem; border-radius: 6px; border: 1px solid #DEE2E6; font-size: 1rem; }
+    .modal-content button { padding: 0.75rem; border-radius: 6px; border: none; background: #0d6efd; color: white; font-weight: 500; cursor: pointer; }
+    .close-modal-btn { position: absolute; top: 0.75rem; right: 0.75rem; background: none; border: none; cursor: pointer; color: #6C757D; }
 </style>

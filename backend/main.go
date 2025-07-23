@@ -17,20 +17,29 @@ import (
 )
 
 func main() {
-	log.Println("--- ✅✅✅ BACKEND SERVER (FILE-BASED TRASH) IS STARTING ✅✅✅ ---")
+	log.Println("--- ✅✅✅ BACKEND SERVER (WITH BULK ACTIONS) IS STARTING ✅✅✅ ---")
 	if err := godotenv.Load(); err != nil { log.Println("Warning: .env file not found.") }
-	baseUploadPath, _ := utils.GetBaseUploadPath(); if err := os.MkdirAll(baseUploadPath, 0755); err != nil { log.Fatalf("Unable to create base upload directory: %v", err) }
-	db, err := database.Connect(); if err != nil { log.Fatalf("Failed to connect to database: %v", err) }
+	baseUploadPath, _ := utils.GetBaseUploadPath()
+	if err := os.MkdirAll(baseUploadPath, 0755); err != nil { log.Fatalf("Unable to create base upload directory: %v", err) }
+	db, err := database.Connect()
+	if err != nil { log.Fatalf("Failed to connect to database: %v", err) }
 	if db != nil { defer db.Close() }
 	
 	router := gin.Default()
-	corsConfig := cors.DefaultConfig(); corsConfig.AllowOrigins = []string{"http://localhost:5173"}; corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"}; corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Authorization", "Tus-Resumable", "Upload-Length", "Upload-Metadata", "Upload-Offset"}; corsConfig.ExposeHeaders = []string{"Location", "Upload-Offset", "Upload-Length"}
+	corsConfig := cors.DefaultConfig()
+	corsConfig.AllowOrigins = []string{"http://localhost:5173"}
+	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"}
+	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Authorization", "Tus-Resumable", "Upload-Length", "Upload-Metadata", "Upload-Offset"}
+	corsConfig.ExposeHeaders = []string{"Location", "Upload-Offset", "Upload-Length"}
 	router.Use(cors.New(corsConfig))
 
-	store := filestore.FileStore{Path: baseUploadPath}; composer := tusd.NewStoreComposer(); store.UseIn(composer); tusdHandler, _ := tusd.NewHandler(tusd.Config{ BasePath: "/uploads/", StoreComposer: composer })
+	store := filestore.FileStore{Path: baseUploadPath}
+	composer := tusd.NewStoreComposer()
+	store.UseIn(composer)
+	tusdHandler, _ := tusd.NewHandler(tusd.Config{ BasePath: "/uploads/", StoreComposer: composer })
 
 	authHandler := handlers.NewAuthHandler(db)
-	fileHandler := handlers.NewFileHandler() // ✅ No longer needs db
+	fileHandler := handlers.NewFileHandler()
 
 	router.POST("/register", authHandler.Register)
 	router.POST("/login", authHandler.Login)
@@ -38,18 +47,23 @@ func main() {
 
 	api := router.Group("/api", middleware.AuthMiddleware())
 	{
+		// Standard file routes
 		api.GET("/files", fileHandler.ListFiles)
 		api.POST("/folders", fileHandler.CreateFolder)
+		api.POST("/folders/structure", fileHandler.CreateFolderPath)
 		api.POST("/move", fileHandler.MoveItem)
 		api.POST("/finalize-upload", fileHandler.FinalizeUpload)
 		api.DELETE("/items/*path", fileHandler.DeleteItem)
+		api.POST("/items/bulk-delete", fileHandler.BulkDeleteItems) // ✅ ใหม่
+
+		// Trash routes
+		api.GET("/trash", fileHandler.ListTrashItems)
+		api.POST("/trash/restore", fileHandler.RestoreItem)
+		api.DELETE("/trash/*path", fileHandler.PermanentDeleteItem)
+
+		// Download routes
 		api.GET("/download/*path", fileHandler.DownloadFile)
 		api.GET("/download-folder/*path", fileHandler.DownloadFolder)
-
-        // ✅ Updated Trash Routes
-        api.GET("/trash", fileHandler.ListTrashedItems)
-        api.POST("/trash/restore", fileHandler.RestoreItem)
-        api.DELETE("/trash/*path", fileHandler.PermanentlyDeleteItem)
 	}
 	
 	log.Println("--- ROUTES ARE SET UP. SERVER IS LISTENING ON PORT 8080 ---")
