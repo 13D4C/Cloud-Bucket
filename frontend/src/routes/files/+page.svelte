@@ -2,7 +2,7 @@
     import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import * as tus from 'tus-js-client';
-	import { Folder, FileText, UploadCloud, Trash2, Home, ChevronRight, Download, X, AlertCircle, Plus, Clock, CheckCircle, XCircle, RotateCcw, Upload } from 'lucide-svelte';
+	import { Folder, FileText, UploadCloud, Trash2, Home, ChevronRight, Download, X, AlertCircle, Plus, Clock, CheckCircle, XCircle, RotateCcw, Upload, CornerLeftUp } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import { th } from 'date-fns/locale';
     import { fetchApi } from '$lib/api';
@@ -23,7 +23,6 @@
     let totalUploadProgress = 0;
     let isUploading = false;
     let selectedItems = new Set<string>();
-
     let selectAllCheckbox: HTMLInputElement;
 
 	// --- Computed State ---
@@ -75,24 +74,24 @@
 			error_message = `Could not load items: ${error.message}`;
 		}
 	}
-	$: if ($page.url) { fetchData(); selectedItems.clear(); }
+	$: if ($page.url) { fetchData(); selectedItems = new Set(); }
 
 	// --- Handlers for Selection ---
     function toggleSelect(path: string) {
-        if (selectedItems.has(path)) {
-            selectedItems.delete(path);
+        const newSelectedItems = new Set(selectedItems);
+        if (newSelectedItems.has(path)) {
+            newSelectedItems.delete(path);
         } else {
-            selectedItems.add(path);
+            newSelectedItems.add(path);
         }
-        selectedItems = selectedItems;
+        selectedItems = newSelectedItems;
     }
     function toggleSelectAll() {
         if (allSelected) {
-            selectedItems.clear();
+            selectedItems = new Set();
         } else {
-            items.forEach(item => selectedItems.add(item.path));
+            selectedItems = new Set(items.map(item => item.path));
         }
-        selectedItems = selectedItems;
     }
     async function handleBulkDelete() {
         if (!confirm(`Are you sure you want to move ${selectedItems.size} items to the trash?`)) return;
@@ -101,23 +100,47 @@
                 method: 'POST',
                 body: JSON.stringify({ paths: Array.from(selectedItems) })
             });
-            selectedItems.clear();
+            selectedItems = new Set();
             await fetchData();
         } catch (e: any) {
             alert(`Error moving items to trash: ${e.message}`);
+        }
+    }
+    async function handleBulkDownload() {
+        if (selectedItems.size === 0) return alert("Please select items to download.");
+        try {
+            const res = await fetchApi('/api/items/bulk-download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: Array.from(selectedItems) })
+            });
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || `Server responded with status ${res.status}`);
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `IT-Cloud-${new Date().toISOString().slice(0, 10)}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+            selectedItems = new Set();
+        } catch (error: any) {
+            console.error('Bulk download failed:', error);
+            alert(`Could not download items: ${error.message}`);
         }
     }
 
 	// --- Drag & Drop Upload Handlers ---
     function handleUploadDragOver(event: DragEvent) {
         event.preventDefault();
-        if (!draggedItem && !isTrashView) {
-            isDraggingOver = true;
-        }
+        if (!draggedItem && !isTrashView) { isDraggingOver = true; }
     }
-    function handleUploadDragLeave() {
-        isDraggingOver = false;
-    }
+    function handleUploadDragLeave() { isDraggingOver = false; }
     function handleUploadDrop(event: DragEvent) {
         event.preventDefault();
         isDraggingOver = false;
@@ -144,7 +167,6 @@
             id: Date.now() + Math.random(), file, progress: 0, status: 'preparing' as const, path: (file as any).webkitRelativePath || file.name
         }));
         uploadQueue = [...uploadQueue, ...newUploads];
-        
         const dirPaths = new Set<string>();
         newUploads.forEach(upload => {
             const pathParts = upload.path.split('/');
@@ -154,21 +176,17 @@
                 }
             }
         });
-
         if (dirPaths.size > 0) {
             const createFolderPromises = Array.from(dirPaths).map(path => 
                 fetchApi(`/api/folders/structure`, { method: 'POST', body: JSON.stringify({ path: `${currentPath}/${path}`.replace(/^\//, '') }) })
             );
             await Promise.allSettled(createFolderPromises);
         }
-        
         uploadQueue.forEach(item => { if (item.status === 'preparing') item.status = 'uploading'; });
         uploadQueue = [...uploadQueue];
-
         const uploadPromises = newUploads.map(uploadItem => startSingleUpload(uploadItem));
         await Promise.allSettled(uploadPromises);
         await fetchData();
-        
         setTimeout(() => {
             uploadQueue = uploadQueue.filter(item => item.status !== 'done' && item.status !== 'error');
             if (uploadQueue.length === 0) { isUploading = false; }
@@ -227,7 +245,53 @@
     async function handleDrop(destinationFolder: any) { if (draggedItem && draggedItem.path !== destinationFolder.path) { await handleMove(draggedItem, destinationFolder); } handleDragEnd(); }
     async function handleMove(sourceItem: any, destinationFolder: any) { await fetchApi(`/api/move`,{method:'POST',body:JSON.stringify({sourcePath:sourceItem.path,destinationFolder:destinationFolder.path})}); await fetchData(); }
 	async function handleCreateFolder() { if (!newFolderName.trim()) return; await fetchApi(`/api/folders?path=${encodeURIComponent(currentPath)}`,{method:'POST',body:JSON.stringify({folderName:newFolderName.trim()})}); showCreateFolderModal=false; newFolderName=''; await fetchData(); }
-    function getDownloadUrl(item: any) { const token = localStorage.getItem('jwt_token'); const endpoint = item.isDir ? 'download-folder' : 'download'; return `http://localhost:8080/api/${endpoint}/${item.path}?token=${token}`; }
+    async function handleMoveUp(item: any) {
+        if (!currentPath) return;
+        const pathParts = currentPath.split('/');
+        pathParts.pop();
+        const destinationFolder = pathParts.join('/');
+        const itemName = item.originalName || item.name;
+        if (!confirm(`Move "${itemName}" up one level?`)) return;
+        try {
+            await fetchApi('/api/move', {
+                method: 'POST',
+                body: JSON.stringify({
+                    sourcePath: item.path,
+                    destinationFolder: destinationFolder 
+                })
+            });
+            await fetchData();
+        } catch (e: any) {
+            alert(`Error moving item: ${e.message}`);
+        }
+    }
+    async function handleDownload(item: any) {
+        try {
+            const token = localStorage.getItem('jwt_token');
+            const endpoint = item.isDir ? 'download-folder' : 'download';
+            const downloadUrl = `http://localhost:8080/api/${endpoint}/${item.path}?token=${token}`;
+            const res = await fetch(downloadUrl);
+            if (!res.ok) {
+                let errorMessage = `Server responded with status ${res.status}`;
+                try { const errorData = await res.json(); errorMessage = errorData.error || errorData.message || errorMessage; } catch (e) { errorMessage = await res.text(); }
+                throw new Error(errorMessage);
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = item.originalName || `${item.name}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+        } catch (error: any) {
+            console.error('Download failed:', error);
+            alert(`Could not download: ${error.message}`);
+        }
+    }
+
     function formatBytes(bytes: number, decimals=2) { if(!+bytes)return"0 Bytes";const k=1024,i=Math.floor(Math.log(bytes)/Math.log(k));return`${parseFloat((bytes/Math.pow(k,i)).toFixed(decimals))} ${["Bytes","KB","MB","GB","TB"][i]}` }
 </script>
 
@@ -250,10 +314,10 @@
     <div class="selection-bar" transition:fly={{ y: 20, duration: 300 }}>
         <div class="selection-info">
             <span>{selectedItems.size} selected</span>
-            <button class="deselect-btn" on:click={() => selectedItems.clear()}>Deselect all</button>
+            <button class="deselect-btn" on:click={() => selectedItems = new Set()}>Deselect all</button>
         </div>
         <div class="selection-actions">
-            <button class="action-btn-sm" disabled><Download size=16/> Download</button>
+            <button class="action-btn-sm" on:click={handleBulkDownload}><Download size=16/> Download</button>
             <button class="action-btn-sm delete" on:click={handleBulkDelete}><Trash2 size=16/> Move to Trash</button>
         </div>
     </div>
@@ -262,9 +326,7 @@
 <!-- Main Content Area -->
 <div class="main-content-area" on:dragover={handleUploadDragOver} on:dragleave={handleUploadDragLeave} on:drop={handleUploadDrop}>
     {#if isDraggingOver}
-        <div class="dropzone-overlay">
-            <div class="dropzone-message"><UploadCloud size=64 /><span>Drop files to upload</span></div>
-        </div>
+        <div class="dropzone-overlay"><div class="dropzone-message"><UploadCloud size=64 /><span>Drop files to upload</span></div></div>
     {/if}
     {#if isTrashView}
         <div in:fade|local>
@@ -293,7 +355,9 @@
         <div in:fade|local>
             <div class="page-header">
                 <div class="breadcrumbs">{#each breadcrumbs as crumb, i}<a href={crumb.path}>{#if i === 0}<Home size=16/>{:else}<span>{crumb.name}</span>{/if}</a>{#if i < breadcrumbs.length - 1}<ChevronRight size=16 class="separator"/>{/if}{/each}</div>
+                <!-- CORRECTED ACTION BUTTONS -->
                 <div class="actions">
+                    <button class="action-btn secondary" on:click={() => showCreateFolderModal = true}><Plus size=16/> New Folder</button>
                     <label class="action-btn secondary"><Upload size=16/> Upload Folder<input type="file" hidden on:change={handleFolderSelect} webkitdirectory /></label>
                     <label class="action-btn primary"><UploadCloud size=16/> Upload Files<input type="file" hidden on:change={handleFileSelect} multiple /></label>
                 </div>
@@ -307,7 +371,7 @@
             {/if}
             {#if recentFiles.length > 0 && currentPath === ''}
                 <h2 class="section-title"><Clock size=20 /><span>Recent Files</span></h2>
-                <div class="recents-grid">{#each recentFiles as file (file.path)}<div class="recent-card"><div class="card-icon"><FileText size=28 color="#6C757D"/></div><div class="card-details"><span class="card-name" title={file.originalName}>{file.originalName}</span><span class="card-meta">{formatBytes(file.size)}</span></div><div class="card-actions"><a href={getDownloadUrl(file)} download={file.originalName} class="action-icon" on:click|stopPropagation><Download size=18 /></a><button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(file)}><Trash2 size=18 /></button></div></div>{/each}</div>
+                <div class="recents-grid">{#each recentFiles as file (file.path)}<div class="recent-card"><div class="card-icon"><FileText size=28 color="#6C757D"/></div><div class="card-details"><span class="card-name" title={file.originalName}>{file.originalName}</span><span class="card-meta">{formatBytes(file.size)}</span></div><div class="card-actions"><button class="action-icon" on:click|preventDefault|stopPropagation={() => handleDownload(file)} title="Download file"><Download size=18 /></button><button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(file)}><Trash2 size=18 /></button></div></div>{/each}</div>
             {/if}
             <h2 class="section-title">All Files & Folders</h2>
             <div class="file-grid-container">
@@ -316,11 +380,17 @@
                     <div>Name</div><div>Size</div><div>Modified</div><div></div>
                 </div>
                 {#each folders as folder (folder.path)}
-                    <div class="grid-row is-folder" class:selected={selectedItems.has(folder.path)} class:drop-target={draggedItem&&draggedItem.path!==folder.path} on:click|self={()=>goto(`/files?path=${folder.path}`)} on:dragover|preventDefault on:drop|preventDefault={()=>handleDrop(folder)}>
+                    <div class="grid-row is-folder" class:selected={selectedItems.has(folder.path)} class:drop-target={draggedItem&&draggedItem.path!==folder.path} on:click={()=>goto(`/files?path=${folder.path}`)} on:dragover|preventDefault on:drop|preventDefault={()=>handleDrop(folder)}>
                         <div class="row-select" on:click|stopPropagation><input type="checkbox" checked={selectedItems.has(folder.path)} on:change={()=>toggleSelect(folder.path)}/></div>
                         <div class="item-name"><Folder size=20 color="#5DADE2"/><span>{folder.name}</span></div>
                         <div class="item-size">--</div><div class="item-modified">{formatDistanceToNow(new Date(folder.modified),{locale:th,addSuffix:true})}</div>
-                        <div class="row-actions"><a class="action-icon" href={getDownloadUrl(folder)} on:click|stopPropagation><Download size=18/></a><button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(folder)}><Trash2 size=18/></button></div>
+                        <div class="row-actions">
+                            {#if currentPath}
+                                <button class="action-icon" on:click|preventDefault|stopPropagation={() => handleMoveUp(folder)} title="Move Up"><CornerLeftUp size=18/></button>
+                            {/if}
+                            <button class="action-icon" on:click|preventDefault|stopPropagation={() => handleDownload(folder)} title="Download folder"><Download size=18/></button>
+                            <button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(folder)}><Trash2 size=18/></button>
+                        </div>
                     </div>
                 {/each}
                 {#each files as file (file.path)}
@@ -328,7 +398,13 @@
                         <div class="row-select" on:click|stopPropagation><input type="checkbox" checked={selectedItems.has(file.path)} on:change={()=>toggleSelect(file.path)}/></div>
                         <div class="item-name"><FileText size=20 color="#6C757D"/><span>{file.originalName}</span></div>
                         <div class="item-size">{formatBytes(file.size)}</div><div class="item-modified">{formatDistanceToNow(new Date(file.modified),{locale:th,addSuffix:true})}</div>
-                        <div class="row-actions"><a class="action-icon" href={getDownloadUrl(file)} download={file.originalName} on:click|stopPropagation><Download size=18/></a><button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(file)}><Trash2 size=18/></button></div>
+                        <div class="row-actions">
+                            {#if currentPath}
+                                <button class="action-icon" on:click|preventDefault|stopPropagation={() => handleMoveUp(file)} title="Move Up"><CornerLeftUp size=18/></button>
+                            {/if}
+                            <button class="action-icon" on:click|preventDefault|stopPropagation={() => handleDownload(file)} title="Download file"><Download size=18/></button>
+                            <button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(file)}><Trash2 size=18/></button>
+                        </div>
                     </div>
                 {/each}
             </div>
@@ -338,8 +414,8 @@
         </div>
     {/if}
 </div>
-
 <style>
+    /* ...Your existing styles... */
     .main-content-area { position: relative; height: 100%; }
     .dropzone-overlay { position: absolute; inset: -2rem; background-color: rgba(239, 246, 255, 0.95); border: 3px dashed #0d6efd; border-radius: 12px; display: grid; place-items: center; z-index: 99; pointer-events: none; }
     .dropzone-message { display: flex; flex-direction: column; align-items: center; gap: 1rem; color: #0b5ed7; font-size: 1.5rem; font-weight: 500; }

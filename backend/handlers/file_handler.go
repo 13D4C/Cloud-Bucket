@@ -17,7 +17,9 @@ import (
 )
 
 // --- Structs ---
+
 type FileHandler struct{}
+
 type DisplayFileInfo struct {
 	OriginalName string    `json:"originalName,omitempty"`
 	Name         string    `json:"name"`
@@ -26,6 +28,7 @@ type DisplayFileInfo struct {
 	IsDir        bool      `json:"isDir"`
 	Path         string    `json:"path"`
 }
+
 type TusInfo struct {
 	MetaData struct {
 		Filename string `json:"filename"`
@@ -33,8 +36,19 @@ type TusInfo struct {
 	} `json:"MetaData"`
 }
 
+type BulkDownloadPayload struct {
+	Paths []string `json:"paths" binding:"required"`
+}
+
+type itemToZip struct {
+	FullPath  string
+	PathInZip string
+}
+
 // --- Constructor & Helper ---
+
 func NewFileHandler() *FileHandler { return &FileHandler{} }
+
 func getUsername(c *gin.Context) (string, bool) {
 	username, exists := c.Get("username")
 	if !exists {
@@ -212,28 +226,146 @@ func (h *FileHandler) PermanentDeleteItem(c *gin.Context) {
 // --- Download Operations ---
 
 func (h *FileHandler) DownloadFile(c *gin.Context) {
-	username, ok := getUsername(c); if !ok { return }
-	relativePath := strings.TrimPrefix(c.Param("path"), "/"); itemPath, err := utils.GetSafePathForUser(username, relativePath)
-	if err != nil { c.JSON(http.StatusNotFound, gin.H{"error": "File not found"}); return }
-	info, err := os.Stat(itemPath); if os.IsNotExist(err) { c.JSON(http.StatusNotFound, gin.H{"error": "File not found"}); return }
-	infoData, err := os.ReadFile(itemPath + ".info"); if err != nil { c.FileAttachment(itemPath, info.Name()); return }
-	var tusInfo TusInfo; json.Unmarshal(infoData, &tusInfo)
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", tusInfo.MetaData.Filename)); c.Header("Content-Type", tusInfo.MetaData.Filetype); c.File(itemPath)
+	username, ok := getUsername(c)
+	if !ok { return }
+	relativePath := strings.TrimPrefix(c.Param("path"), "/")
+	itemPath, err := utils.GetSafePathForUser(username, relativePath)
+	if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file path format"}); return }
+	if _, err := os.Stat(itemPath); os.IsNotExist(err) { c.JSON(http.StatusNotFound, gin.H{"error": "File does not exist on server"}); return }
+	
+	infoData, err := os.ReadFile(itemPath + ".info")
+	var tusInfo TusInfo
+	if err == nil && json.Unmarshal(infoData, &tusInfo) == nil && tusInfo.MetaData.Filename != "" {
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", tusInfo.MetaData.Filename))
+		fileType := tusInfo.MetaData.Filetype
+		if fileType == "" { fileType = "application/octet-stream" }
+		c.Header("Content-Type", fileType)
+		c.File(itemPath)
+	} else {
+		c.FileAttachment(itemPath, filepath.Base(itemPath))
+	}
 }
 
 func (h *FileHandler) DownloadFolder(c *gin.Context) {
 	username, ok := getUsername(c); if !ok { return }
-	relativePath := strings.TrimPrefix(c.Param("path"), "/"); folderPath, err := utils.GetSafePathForUser(username, relativePath)
-	if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid path"}); return }
-	info, err := os.Stat(folderPath); if os.IsNotExist(err) || !info.IsDir() { c.JSON(http.StatusNotFound, gin.H{"error": "Folder not found"}); return }
-	zipFileName := info.Name() + ".zip"; c.Header("Content-Type", "application/zip"); c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", zipFileName))
-	zipWriter := zip.NewWriter(c.Writer); defer zipWriter.Close()
-	filepath.Walk(folderPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil { return err }; relPath, err := filepath.Rel(folderPath, path); if err != nil || relPath == "." { return err }
-		header, err := zip.FileInfoHeader(info); if err != nil { return err }
-		header.Name = filepath.ToSlash(relPath); if info.IsDir() { header.Name += "/" } else { header.Method = zip.Deflate }
-		writer, err := zipWriter.CreateHeader(header); if err != nil { return err }
-		if !info.IsDir() { fileToZip, err := os.Open(path); if err != nil { return err }; defer fileToZip.Close(); _, err = io.Copy(writer, fileToZip) }
+	relativePath := strings.TrimPrefix(c.Param("path"), "/")
+	folderPath, err := utils.GetSafePathForUser(username, relativePath)
+	if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid folder path format"}); return }
+	
+	_, err = os.Stat(folderPath)
+	if os.IsNotExist(err) { c.JSON(http.StatusNotFound, gin.H{"error": "Folder not found"}); return }
+
+	// --- EDITED: Changed zip filename format ---
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	zipFileName := fmt.Sprintf("IT-Cloud-%s.zip", timestamp)
+	
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", zipFileName))
+	zipWriter := zip.NewWriter(c.Writer)
+	defer zipWriter.Close()
+	
+	if err := addPathToZipSmart(zipWriter, folderPath, ""); err != nil {
+		log.Printf("[ERROR] DownloadFolder: Error during zipping process for %s: %v", folderPath, err)
+	}
+}
+
+func (h *FileHandler) BulkDownloadItems(c *gin.Context) {
+	username, ok := getUsername(c); if !ok { return }
+
+	var payload BulkDownloadPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()}); return
+	}
+
+	var validItemsToZip []itemToZip
+	for _, relPath := range payload.Paths {
+		fullPath, err := utils.GetSafePathForUser(username, relPath)
+		if err != nil || os.IsNotExist(err) { continue }
+		if _, err := os.Stat(fullPath); os.IsNotExist(err) { continue }
+		validItemsToZip = append(validItemsToZip, itemToZip{
+			FullPath:  fullPath,
+			PathInZip: filepath.Base(fullPath),
+		})
+	}
+
+	if len(validItemsToZip) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "None of the selected items could be found or accessed."}); return
+	}
+
+	// --- EDITED: Changed zip filename format ---
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	zipFileName := fmt.Sprintf("IT-Cloud-%s.zip", timestamp)
+
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", zipFileName))
+
+	zipWriter := zip.NewWriter(c.Writer)
+	defer zipWriter.Close()
+
+	for _, item := range validItemsToZip {
+		if err := addPathToZipSmart(zipWriter, item.FullPath, item.PathInZip); err != nil {
+			log.Printf("[ERROR] BulkDownload: Failed to add '%s' to zip. Error: %v", item.FullPath, err)
+		}
+	}
+}
+
+
+// --- REVISED ZIP HELPER FUNCTIONS ---
+
+func addPathToZipSmart(zipWriter *zip.Writer, fullPath, baseInZip string) error {
+	info, err := os.Stat(fullPath)
+	if err != nil {
 		return err
-	})
+	}
+
+	if info.IsDir() {
+		if baseInZip != "" {
+			header, _ := zip.FileInfoHeader(info)
+			header.Name = filepath.ToSlash(baseInZip) + "/"
+			_, err := zipWriter.CreateHeader(header)
+			if err != nil { return err }
+		}
+
+		entries, err := os.ReadDir(fullPath)
+		if err != nil { return err }
+
+		for _, entry := range entries {
+			childFullPath := filepath.Join(fullPath, entry.Name())
+			childBaseInZip := filepath.Join(baseInZip, entry.Name())
+			if err := addPathToZipSmart(zipWriter, childFullPath, childBaseInZip); err != nil {
+				log.Printf("Warning: could not add %s to zip: %v", childFullPath, err)
+			}
+		}
+		return nil
+	}
+
+	if filepath.Ext(fullPath) == ".info" {
+		return nil
+	}
+    
+	infoFilePath := fullPath + ".info"
+	infoData, err := os.ReadFile(infoFilePath)
+	if err == nil {
+		var tusInfo TusInfo
+		if json.Unmarshal(infoData, &tusInfo) == nil && tusInfo.MetaData.Filename != "" {
+			dirPath := filepath.Dir(baseInZip)
+			baseInZip = filepath.Join(dirPath, tusInfo.MetaData.Filename)
+		}
+	}
+
+	header, err := zip.FileInfoHeader(info)
+	if err != nil { return err }
+	
+	header.Name = filepath.ToSlash(baseInZip)
+	header.Method = zip.Deflate
+
+	writer, err := zipWriter.CreateHeader(header)
+	if err != nil { return err }
+
+	fileToZip, err := os.Open(fullPath)
+	if err != nil { return err }
+	defer fileToZip.Close()
+
+	_, err = io.Copy(writer, fileToZip)
+	return err
 }
