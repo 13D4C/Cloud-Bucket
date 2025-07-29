@@ -9,7 +9,6 @@
 	import { onMount, afterUpdate } from 'svelte';
     import { fly, fade } from 'svelte/transition';
 
-	// --- State Variables ---
 	let files: any[] = [];
 	let folders: any[] = [];
 	let items: any[] = [];
@@ -295,6 +294,7 @@
     function formatBytes(bytes: number, decimals=2) { if(!+bytes)return"0 Bytes";const k=1024,i=Math.floor(Math.log(bytes)/Math.log(k));return`${parseFloat((bytes/Math.pow(k,i)).toFixed(decimals))} ${["Bytes","KB","MB","GB","TB"][i]}` }
 </script>
 
+<!-- HTML Template เหมือนเดิมทั้งหมด -->
 <!-- New Folder Modal -->
 {#if showCreateFolderModal}
 	<div class="modal-backdrop" on:click={() => showCreateFolderModal = false}>
@@ -302,7 +302,7 @@
 			<h3>New Folder</h3>
 			<form on:submit|preventDefault={handleCreateFolder}>
 				<input type="text" bind:value={newFolderName} placeholder="Enter folder name..." required />
-				<button type="submit">Create Folder</button>
+				<button type="submit" class="primary">Create Folder</button>
 			</form>
 			<button class="close-modal-btn" on:click={() => showCreateFolderModal = false}><X size=20 /></button>
 		</div>
@@ -338,12 +338,12 @@
                 {#each items as item (item.path)}
                     <div class="grid-row" transition:fade|local>
                         <div class="item-name">
-                            {#if item.isDir}<Folder size=20 color="#5DADE2"/>{:else}<FileText size=20 color="#6C757D"/>{/if}
+                            {#if item.isDir}<Folder size=20 color="#4f86c2"/>{:else}<FileText size=20 color="#9ca3af"/>{/if}
                             <span>{item.originalName || item.name}</span>
                         </div>
                         <div class="row-actions">
-                            <button class="action-btn-sm restore" title="Restore" on:click={() => handleRestore(item)}><RotateCcw size=18/></button>
-                            <button class="action-btn-sm delete" title="Delete Forever" on:click={() => handlePermanentDelete(item)}><Trash2 size=18/></button>
+                            <button class="action-icon" title="Restore" on:click={() => handleRestore(item)}><RotateCcw size=18/></button>
+                            <button class="action-icon delete" title="Delete Forever" on:click={() => handlePermanentDelete(item)}><Trash2 size=18/></button>
                         </div>
                     </div>
                 {:else}
@@ -355,7 +355,6 @@
         <div in:fade|local>
             <div class="page-header">
                 <div class="breadcrumbs">{#each breadcrumbs as crumb, i}<a href={crumb.path}>{#if i === 0}<Home size=16/>{:else}<span>{crumb.name}</span>{/if}</a>{#if i < breadcrumbs.length - 1}<ChevronRight size=16 class="separator"/>{/if}{/each}</div>
-                <!-- CORRECTED ACTION BUTTONS -->
                 <div class="actions">
                     <button class="action-btn secondary" on:click={() => showCreateFolderModal = true}><Plus size=16/> New Folder</button>
                     <label class="action-btn secondary"><Upload size=16/> Upload Folder<input type="file" hidden on:change={handleFolderSelect} webkitdirectory /></label>
@@ -366,12 +365,12 @@
             {#if isUploading && uploadQueue.length > 0}
                 <div class="upload-status-area">
                     <div class="upload-header"><span>Uploading {uploadQueue.length} items</span><div class="total-progress-bar-container"><div class="total-progress-bar" style="width: {totalUploadProgress}%"></div></div></div>
-                    <div class="upload-list">{#each uploadQueue as upload (upload.id)}<div class="upload-item"><div class="upload-icon">{#if upload.status==='uploading'||upload.status==='finalizing'||upload.status==='preparing'}<UploadCloud size=20 class="spinner"/>{:else if upload.status==='done'}<CheckCircle size=20 color="#16a34a"/>{:else if upload.status==='error'}<XCircle size=20 color="#dc2626"/>{/if}</div><div class="upload-details"><span class="upload-name" title={upload.path}>{upload.path}</span>{#if upload.status!=='error'}<div class="item-progress-bar-container"><div class="item-progress-bar" style="width: {upload.progress}%" class:done={upload.status==='done'}></div></div>{:else}<span class="upload-error-text" title={upload.error}>{upload.error}</span>{/if}</div><div class="upload-progress-text">{#if upload.status==='done'}Done{:else if upload.status==='error'}Failed{:else if upload.status==='preparing'}Preparing...{:else}{Math.round(upload.progress)}%{/if}</div></div>{/each}</div>
+                    <div class="upload-list">{#each uploadQueue as upload (upload.id)}<div class="upload-item"><div class="upload-icon">{#if upload.status==='uploading'||upload.status==='finalizing'||upload.status==='preparing'}<UploadCloud size=20 class="spinner"/>{:else if upload.status==='done'}<CheckCircle size=20 color="#22c55e"/>{:else if upload.status==='error'}<XCircle size=20 color="#ef4444"/>{/if}</div><div class="upload-details"><span class="upload-name" title={upload.path}>{upload.path}</span>{#if upload.status!=='error'}<div class="item-progress-bar-container"><div class="item-progress-bar" style="width: {upload.progress}%" class:done={upload.status==='done'}></div></div>{:else}<span class="upload-error-text" title={upload.error}>{upload.error}</span>{/if}</div><div class="upload-progress-text">{#if upload.status==='done'}Done{:else if upload.status==='error'}Failed{:else if upload.status==='preparing'}Preparing...{:else}{Math.round(upload.progress)}%{/if}</div></div>{/each}</div>
                 </div>
             {/if}
             {#if recentFiles.length > 0 && currentPath === ''}
                 <h2 class="section-title"><Clock size=20 /><span>Recent Files</span></h2>
-                <div class="recents-grid">{#each recentFiles as file (file.path)}<div class="recent-card"><div class="card-icon"><FileText size=28 color="#6C757D"/></div><div class="card-details"><span class="card-name" title={file.originalName}>{file.originalName}</span><span class="card-meta">{formatBytes(file.size)}</span></div><div class="card-actions"><button class="action-icon" on:click|preventDefault|stopPropagation={() => handleDownload(file)} title="Download file"><Download size=18 /></button><button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(file)}><Trash2 size=18 /></button></div></div>{/each}</div>
+                <div class="recents-grid">{#each recentFiles as file (file.path)}<div class="recent-card"><div class="card-icon"><FileText size=28 color="#9ca3af"/></div><div class="card-details"><span class="card-name" title={file.originalName}>{file.originalName}</span><span class="card-meta">{formatBytes(file.size)}</span></div><div class="card-actions"><button class="action-icon" on:click|preventDefault|stopPropagation={() => handleDownload(file)} title="Download file"><Download size=18 /></button><button class="action-icon delete" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(file)}><Trash2 size=18 /></button></div></div>{/each}</div>
             {/if}
             <h2 class="section-title">All Files & Folders</h2>
             <div class="file-grid-container">
@@ -382,28 +381,24 @@
                 {#each folders as folder (folder.path)}
                     <div class="grid-row is-folder" class:selected={selectedItems.has(folder.path)} class:drop-target={draggedItem&&draggedItem.path!==folder.path} on:click={()=>goto(`/files?path=${folder.path}`)} on:dragover|preventDefault on:drop|preventDefault={()=>handleDrop(folder)}>
                         <div class="row-select" on:click|stopPropagation><input type="checkbox" checked={selectedItems.has(folder.path)} on:change={()=>toggleSelect(folder.path)}/></div>
-                        <div class="item-name"><Folder size=20 color="#5DADE2"/><span>{folder.name}</span></div>
+                        <div class="item-name"><Folder size=20 color="#4f86c2"/><span>{folder.name}</span></div>
                         <div class="item-size">--</div><div class="item-modified">{formatDistanceToNow(new Date(folder.modified),{locale:th,addSuffix:true})}</div>
                         <div class="row-actions">
-                            {#if currentPath}
-                                <button class="action-icon" on:click|preventDefault|stopPropagation={() => handleMoveUp(folder)} title="Move Up"><CornerLeftUp size=18/></button>
-                            {/if}
+                            {#if currentPath}<button class="action-icon" on:click|preventDefault|stopPropagation={() => handleMoveUp(folder)} title="Move Up"><CornerLeftUp size=18/></button>{/if}
                             <button class="action-icon" on:click|preventDefault|stopPropagation={() => handleDownload(folder)} title="Download folder"><Download size=18/></button>
-                            <button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(folder)}><Trash2 size=18/></button>
+                            <button class="action-icon delete" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(folder)}><Trash2 size=18/></button>
                         </div>
                     </div>
                 {/each}
                 {#each files as file (file.path)}
                     <div class="grid-row" class:selected={selectedItems.has(file.path)} class:dragging={draggedItem?.path===file.path} draggable="true" on:dragstart={()=>handleDragStart(file)} on:dragend={handleDragEnd}>
                         <div class="row-select" on:click|stopPropagation><input type="checkbox" checked={selectedItems.has(file.path)} on:change={()=>toggleSelect(file.path)}/></div>
-                        <div class="item-name"><FileText size=20 color="#6C757D"/><span>{file.originalName}</span></div>
+                        <div class="item-name"><FileText size=20 color="#9ca3af"/><span>{file.originalName}</span></div>
                         <div class="item-size">{formatBytes(file.size)}</div><div class="item-modified">{formatDistanceToNow(new Date(file.modified),{locale:th,addSuffix:true})}</div>
                         <div class="row-actions">
-                            {#if currentPath}
-                                <button class="action-icon" on:click|preventDefault|stopPropagation={() => handleMoveUp(file)} title="Move Up"><CornerLeftUp size=18/></button>
-                            {/if}
+                            {#if currentPath}<button class="action-icon" on:click|preventDefault|stopPropagation={() => handleMoveUp(file)} title="Move Up"><CornerLeftUp size=18/></button>{/if}
                             <button class="action-icon" on:click|preventDefault|stopPropagation={() => handleDownload(file)} title="Download file"><Download size=18/></button>
-                            <button class="action-icon" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(file)}><Trash2 size=18/></button>
+                            <button class="action-icon delete" on:click|preventDefault|stopPropagation={()=>handleSoftDelete(file)}><Trash2 size=18/></button>
                         </div>
                     </div>
                 {/each}
@@ -414,73 +409,493 @@
         </div>
     {/if}
 </div>
+
 <style>
-    /* ...Your existing styles... */
-    .main-content-area { position: relative; height: 100%; }
-    .dropzone-overlay { position: absolute; inset: -2rem; background-color: rgba(239, 246, 255, 0.95); border: 3px dashed #0d6efd; border-radius: 12px; display: grid; place-items: center; z-index: 99; pointer-events: none; }
-    .dropzone-message { display: flex; flex-direction: column; align-items: center; gap: 1rem; color: #0b5ed7; font-size: 1.5rem; font-weight: 500; }
-    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-    h1 { font-size: 1.75rem; margin: 0; color: #1F2937; }
-    .subtitle { color: #6C757D; margin-top: 0.25rem; margin-bottom: 2rem; }
-    .breadcrumbs { display: flex; align-items: center; gap: 0.25rem; font-size: 0.9rem; }
-    .breadcrumbs a { display: flex; align-items: center; gap: 0.5rem; text-decoration: none; color: #6C757D; padding: 0.25rem 0.5rem; border-radius: 6px; }
-    .actions { display: flex; gap: 0.75rem; }
-    .action-btn { padding: 0.6rem 1rem; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; }
-    .action-btn.primary { background-color: #0d6efd; color: white; border: 1px solid transparent; }
-    .action-btn.secondary { background-color: white; color: #343A40; border: 1px solid #DEE2E6; }
-    .upload-status-area { margin-bottom: 2rem; background-color: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); }
-    .upload-header { padding: 1rem 1.5rem; border-bottom: 1px solid #E5E7EB; }
-    .upload-header span { font-weight: 500; }
-    .total-progress-bar-container { width: 100%; height: 8px; background-color: #E9ECEF; border-radius: 4px; overflow: hidden; margin-top: 0.75rem; }
-    .total-progress-bar { height: 100%; background-color: #0d6efd; border-radius: 4px; transition: width 0.3s ease; }
-    .upload-list { max-height: 200px; overflow-y: auto; padding: 0.5rem; }
-    .upload-item { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 1rem; padding: 0.75rem 1rem; }
-    .upload-icon .spinner { animation: spin 1.5s linear infinite; }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    .upload-details { overflow: hidden; }
-    .upload-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9rem; }
-    .item-progress-bar-container { width: 100%; height: 5px; background-color: #E9ECEF; border-radius: 2.5px; overflow: hidden; margin-top: 0.25rem; }
-    .item-progress-bar { height: 100%; background-color: #60a5fa; border-radius: 2.5px; transition: width 0.3s ease; }
-    .item-progress-bar.done { background-color: #22c55e; }
-    .upload-error-text { font-size: 0.8rem; color: #ef4444; }
-    .upload-progress-text { font-size: 0.85rem; font-weight: 500; }
-    .section-title { display: flex; align-items: center; gap: 0.75rem; font-size: 1.25rem; font-weight: 600; margin: 2rem 0 1rem 0; }
-    .recents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-    .recent-card { background: white; border: 1px solid #E5E7EB; border-radius: 12px; padding: 1rem; display: flex; align-items: center; gap: 1rem; position: relative; }
-    .card-details { overflow: hidden; }
-    .card-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .card-meta { font-size: 0.8rem; }
-    .card-actions { position: absolute; top: 0.5rem; right: 0.5rem; display: flex; gap: 0.25rem; opacity: 0; }
-    .recent-card:hover .card-actions { opacity: 1; }
-    .file-grid-container { border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden; }
-    .grid-header { display: grid; grid-template-columns: auto 3fr 1fr 1.5fr auto; padding: 0.75rem 1.5rem; background-color: #F9FAFB; font-size: 0.8rem; text-transform: uppercase; }
-    .grid-row { display: grid; grid-template-columns: auto 3fr 1fr 1.5fr auto; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #F3F4F6; }
-    .grid-row:hover { background-color: #F9FAFB; }
-    .grid-row.is-folder { cursor: pointer; }
-    .item-name { display: flex; align-items: center; gap: 1rem; font-weight: 500; }
-    .row-actions { opacity: 0; display: flex; justify-content: flex-end; gap: 0.5rem; }
-    .grid-row:hover .row-actions { opacity: 1; }
-    .action-icon { background: none; border: none; cursor: pointer; padding: 0.25rem; }
-    .dragging { opacity: 0.5; }
-    .drop-target { outline: 2px dashed #0d6efd; }
-    .empty-state { text-align: center; padding: 4rem; }
-    .selection-bar { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); width: auto; max-width: 600px; background-color: #2c3e50; color: white; border-radius: 12px; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
-    .selection-info { display: flex; align-items: center; gap: 1rem; }
-    .deselect-btn { background: none; border: none; color: #95a5a6; cursor: pointer; }
-    .selection-actions { display: flex; gap: 0.75rem; }
-    .action-btn-sm { padding: 0.5rem 1rem; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; gap: 0.5rem; background-color: #34495e; color: white; border: 1px solid #4a627a; }
-    .action-btn-sm.delete:hover { background-color: #c0392b; }
-    .header-select, .row-select { padding-right: 1rem; display: flex; align-items: center; }
-    input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
-    .grid-row.selected { background-color: #E7F1FF !important; }
-    .file-grid-container.is-trash .grid-header, .file-grid-container.is-trash .grid-row { grid-template-columns: 1fr auto; }
-    .file-grid-container.is-trash .row-actions { opacity: 1; }
-    .action-btn-sm.restore:hover { border-color: #4ade80; background-color: #f0fdf4; color: #166534; }
-    .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(9, 30, 66, 0.7); display: grid; place-items: center; z-index: 100; }
-    .modal-content { position: relative; background: white; padding: 2rem; border-radius: 12px; width: 90%; max-width: 400px; }
-    .modal-content h3 { margin: 0 0 1.5rem 0; font-size: 1.25rem; }
-    .modal-content form { display: flex; flex-direction: column; gap: 1rem; }
-    .modal-content input { padding: 0.75rem; border-radius: 6px; border: 1px solid #DEE2E6; font-size: 1rem; }
-    .modal-content button { padding: 0.75rem; border-radius: 6px; border: none; background: #0d6efd; color: white; font-weight: 500; cursor: pointer; }
-    .close-modal-btn { position: absolute; top: 0.75rem; right: 0.75rem; background: none; border: none; cursor: pointer; color: #6C757D; }
+ .main-content-area { 
+        position: relative; 
+        height: 100%; 
+        color: var(--text-primary); 
+    }
+    .dropzone-overlay { 
+        position: absolute; 
+        inset: -2rem; 
+        background-color: rgba(17, 24, 39, 0.95); 
+        border: 3px dashed var(--accent-primary); 
+        border-radius: 12px; 
+        display: grid; 
+        place-items: center; 
+        z-index: 99; 
+        pointer-events: none; 
+    }
+    .dropzone-message { 
+        display: flex; 
+        flex-direction: column; 
+        align-items: center; 
+        gap: 1rem; 
+        color: var(--accent-primary); 
+        font-size: 1.5rem; 
+        font-weight: 500; 
+    }
+    
+    .page-header { 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        margin-bottom: 1.5rem; 
+    }
+    h1 { 
+        font-size: 1.75rem; 
+        margin: 0; 
+        color: var(--text-primary); 
+    }
+    .subtitle { 
+        color: var(--text-secondary); 
+        margin-top: 0.25rem; 
+        margin-bottom: 2rem; 
+    }
+    
+    .breadcrumbs { 
+        display: flex; 
+        align-items: center; 
+        gap: 0.25rem; 
+        font-size: 0.9rem; 
+    }
+    .breadcrumbs a { 
+        display: flex; 
+        align-items: center; 
+        gap: 0.5rem; 
+        text-decoration: none; 
+        color: var(--text-muted); 
+        padding: 0.25rem 0.5rem; 
+        border-radius: 6px; 
+        transition: background-color 0.2s ease;
+    }
+    .breadcrumbs a:hover { 
+        background-color: var(--bg-secondary); 
+    }
+    .separator { 
+        color: var(--border-color); 
+    }
+    
+    .actions { 
+        display: flex; 
+        gap: 0.75rem; 
+    }
+
+    .action-btn { 
+        padding: 0.6rem 1.2rem; 
+        border-radius: 8px; 
+        font-weight: 500; 
+        cursor: pointer; 
+        display: flex; 
+        align-items: center; 
+        gap: 0.6rem;
+        border: none;
+        transition: all 0.2s ease-in-out;
+    }
+    .action-btn.primary { 
+        background-color: var(--accent-primary); 
+        color: white; 
+    }
+    .action-btn.primary:hover { 
+        background-color: var(--accent-primary-hover); 
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+    }
+    .action-btn.secondary { 
+        background-color: var(--bg-tertiary); 
+        color: var(--text-primary); 
+        border: 1px solid var(--border-color);
+    }
+    .action-btn.secondary:hover { 
+        background-color: var(--border-color);
+        border-color: var(--text-muted);
+        transform: translateY(-2px);
+    }
+    
+    .upload-status-area { 
+        margin-bottom: 2rem; 
+        background-color: var(--bg-secondary); 
+        border: 1px solid var(--border-color); 
+        border-radius: 12px; 
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); 
+    }
+    .upload-header { 
+        padding: 1rem 1.5rem; 
+        border-bottom: 1px solid var(--border-color); 
+    }
+    .upload-header span { 
+        font-weight: 500; 
+    }
+    .total-progress-bar-container { 
+        width: 100%; 
+        height: 8px; 
+        background-color: var(--bg-tertiary); 
+        border-radius: 4px; 
+        overflow: hidden; 
+        margin-top: 0.75rem; 
+    }
+    .total-progress-bar { 
+        height: 100%; 
+        background-color: var(--accent-primary); 
+        border-radius: 4px; 
+        transition: width 0.3s ease; 
+    }
+    .upload-list { 
+        max-height: 200px; 
+        overflow-y: auto; 
+        padding: 0.5rem; 
+        scrollbar-color: var(--border-color) var(--bg-secondary); 
+    }
+    .upload-item { 
+        display: grid; 
+        grid-template-columns: auto 1fr auto; 
+        align-items: center; 
+        gap: 1rem; 
+        padding: 0.75rem 1rem; 
+    }
+    .upload-icon .spinner { 
+        animation: spin 1.5s linear infinite; 
+    }
+    @keyframes spin { 
+        from { transform: rotate(0deg); } 
+        to { transform: rotate(360deg); } 
+    }
+    .upload-details { 
+        overflow: hidden; 
+    }
+    .upload-name { 
+        white-space: nowrap; 
+        overflow: hidden; 
+        text-overflow: ellipsis; 
+        font-size: 0.9rem; 
+        color: var(--text-secondary); 
+    }
+    .item-progress-bar-container { 
+        width: 100%; 
+        height: 5px; 
+        background-color: var(--bg-tertiary); 
+        border-radius: 2.5px; 
+        overflow: hidden; 
+        margin-top: 0.25rem; 
+    }
+    .item-progress-bar { 
+        height: 100%; 
+        background-color: #f87171; 
+        border-radius: 2.5px; 
+        transition: width 0.3s ease; 
+    }
+    .item-progress-bar.done { 
+        background-color: #22c55e; 
+    }
+    .upload-error-text { 
+        font-size: 0.8rem; 
+        color: var(--error-color); 
+    }
+    .upload-progress-text { 
+        font-size: 0.85rem; 
+        font-weight: 500; 
+        color: var(--text-secondary); 
+    }
+
+    .section-title { 
+        display: flex; 
+        align-items: center; 
+        gap: 0.75rem; 
+        font-size: 1.25rem; 
+        font-weight: 600; 
+        margin: 2rem 0 1rem 0; 
+        color: var(--text-primary); 
+    }
+    
+    .recents-grid { 
+        display: grid; 
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1rem; 
+        margin-bottom: 2rem; 
+    }
+    .recent-card { 
+        background: var(--bg-secondary); 
+        border: 1px solid var(--border-color); 
+        border-radius: 12px; 
+        padding: 1rem; 
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center; 
+        gap: 1rem; 
+        position: relative; 
+        overflow: hidden;
+    }
+    .card-icon {
+        flex-shrink: 0;
+    }
+    .card-details { 
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .card-name { 
+        font-weight: 500; 
+        white-space: nowrap; 
+        overflow: hidden; 
+        text-overflow: ellipsis; 
+        color: var(--text-primary); 
+    }
+    .card-meta { 
+        font-size: 0.8rem; 
+        color: var(--text-muted); 
+    }
+    .card-actions { 
+        display: flex; 
+        gap: 0.5rem; 
+        opacity: 0;
+        transition: opacity 0.2s ease-in-out;
+    }
+    .recent-card:hover .card-actions { 
+        opacity: 1; 
+    }
+
+    .file-grid-container { 
+        border: 1px solid var(--border-color); 
+        border-radius: 12px; 
+        overflow: hidden; 
+        background-color: var(--bg-secondary); 
+    }
+    .grid-header { 
+        display: grid; 
+        grid-template-columns: auto 3fr 1fr 1.5fr auto; 
+        padding: 0.75rem 1.5rem; 
+        background-color: var(--bg-primary); 
+        font-size: 0.8rem; 
+        text-transform: uppercase; 
+        color: var(--text-muted); 
+    }
+    .grid-row { 
+        display: grid; 
+        grid-template-columns: auto 3fr 1fr 1.5fr auto; 
+        align-items: center; 
+        padding: 1rem 1.5rem; 
+        border-bottom: 1px solid var(--border-color); 
+    }
+    .grid-row:last-child { 
+        border-bottom: none; 
+    }
+    .grid-row:hover { 
+        background-color: var(--bg-tertiary); 
+    }
+    .grid-row.is-folder { 
+        cursor: pointer; 
+    }
+    .item-name { 
+        display: flex; 
+        align-items: center; 
+        gap: 1rem; 
+        font-weight: 500; 
+        color: var(--text-primary); 
+    }
+    .item-size, .item-modified { 
+        color: var(--text-secondary); 
+    }
+    .row-actions { 
+        opacity: 0; 
+        display: flex; 
+        justify-content: flex-end; 
+        gap: 0.5rem; 
+    }
+    .grid-row:hover .row-actions { 
+        opacity: 1; 
+    }
+    .action-icon { 
+        background: none; 
+        border: none; 
+        cursor: pointer; 
+        padding: 0.25rem; 
+        color: var(--text-muted); 
+        transition: color 0.2s ease;
+    }
+    .action-icon:hover { 
+        color: var(--accent-primary); 
+    }
+    .action-icon.delete:hover { 
+        color: #ef4444; 
+    }
+    .dragging { 
+        opacity: 0.5; 
+    }
+    .drop-target { 
+        outline: 2px dashed var(--accent-primary); 
+    }
+    .empty-state { 
+        text-align: center; 
+        padding: 4rem; 
+        color: var(--text-muted); 
+    }
+    .empty-state h3 { 
+        color: var(--text-primary); 
+    }
+
+    .selection-bar { 
+        position: fixed; 
+        bottom: 2rem; 
+        left: 50%; 
+        transform: translateX(-50%); 
+        width: auto; 
+        max-width: 600px; 
+        background-color: var(--bg-secondary); 
+        color: white; 
+        border-radius: 12px; 
+        padding: 1rem 1.5rem; 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        z-index: 100; 
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4); 
+        border: 1px solid var(--border-color); 
+    }
+    .selection-info { 
+        display: flex; 
+        align-items: center; 
+        gap: 1rem; 
+    }
+    .deselect-btn { 
+        background: none; 
+        border: none; 
+        color: var(--text-muted); 
+        cursor: pointer; 
+        transition: color 0.2s ease;
+    }
+    .deselect-btn:hover {
+        color: var(--text-primary);
+    }
+    .selection-actions { 
+        display: flex; 
+        gap: 0.75rem; 
+    }
+    .action-btn-sm { 
+        padding: 0.5rem 1rem; 
+        border-radius: 8px; 
+        font-weight: 500; 
+        cursor: pointer; 
+        display: flex; 
+        gap: 0.5rem; 
+        background-color: var(--bg-tertiary); 
+        color: white; 
+        border: 1px solid var(--border-color); 
+        transition: all 0.2s ease;
+    }
+    .action-btn-sm:hover {
+        background-color: var(--border-color);
+    }
+    .action-btn-sm.delete:hover { 
+        background-color: var(--accent-primary); 
+        border-color: var(--accent-primary); 
+    }
+    
+    .header-select, .row-select { 
+        padding-right: 1rem; 
+        display: flex; 
+        align-items: center; 
+    }
+    input[type="checkbox"] { 
+        width: 16px; 
+        height: 16px; 
+        cursor: pointer; 
+        background-color: var(--bg-tertiary); 
+        border: 1px solid var(--border-color); 
+        border-radius: 4px; 
+        appearance: none; 
+        -webkit-appearance: none; 
+        transition: all 0.2s ease;
+    }
+    input[type="checkbox"]:checked { 
+        background-color: var(--accent-primary); 
+        border-color: var(--accent-primary); 
+    }
+    .grid-row.selected { 
+        background-color: var(--nav-active-bg) !important; 
+    }
+    
+    .file-grid-container.is-trash .grid-header, .file-grid-container.is-trash .grid-row { 
+        grid-template-columns: 1fr auto; 
+    }
+    .file-grid-container.is-trash .row-actions { 
+        opacity: 1; 
+    }
+    
+    .modal-backdrop { 
+        position: fixed; 
+        top: 0; 
+        left: 0; 
+        width: 100%; 
+        height: 100%; 
+        background: rgba(17, 24, 39, 0.8); 
+        display: grid; 
+        place-items: center; 
+        z-index: 100; 
+    }
+    .modal-content { 
+        position: relative; 
+        background: var(--bg-secondary); 
+        padding: 2rem; 
+        border-radius: 12px; 
+        width: 90%; 
+        max-width: 400px; 
+        border: 1px solid var(--border-color); 
+        color: var(--text-primary); 
+    }
+    .modal-content h3 { 
+        margin: 0 0 1.5rem 0; 
+        font-size: 1.25rem; 
+    }
+    .modal-content form { 
+        display: flex; 
+        flex-direction: column; 
+        gap: 1rem; 
+    }
+    .modal-content input { 
+        padding: 0.75rem; 
+        border-radius: 6px; 
+        border: 1px solid var(--border-color); 
+        font-size: 1rem; 
+        background-color: var(--bg-main); 
+        color: var(--text-primary); 
+    }
+    .modal-content input:focus { 
+        border-color: var(--accent-primary); 
+        outline: none; 
+    }
+    .modal-content button.primary { 
+        padding: 0.75rem; 
+        border-radius: 6px; 
+        border: none; 
+        background: var(--accent-primary); 
+        color: white; 
+        font-weight: 500; 
+        cursor: pointer; 
+        transition: background-color 0.2s ease;
+    }
+    .modal-content button.primary:hover {
+        background-color: var(--accent-primary-hover);
+    }
+    .close-modal-btn { 
+        position: absolute; 
+        top: 0.75rem; 
+        right: 0.75rem; 
+        background: none; 
+        border: none; 
+        cursor: pointer; 
+        color: var(--text-muted); 
+    }
+
+    .error-banner { 
+        background-color: rgba(239, 68, 68, 0.1); 
+        color: #f87171; 
+        border: 1px solid var(--accent-primary); 
+        padding: 1rem; 
+        border-radius: 8px; 
+        margin-bottom: 1.5rem; 
+        display: flex; 
+        align-items: center; 
+        gap: 0.75rem; 
+    }   
 </style>
