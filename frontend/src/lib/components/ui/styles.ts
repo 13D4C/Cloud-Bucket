@@ -43,10 +43,11 @@ export const styles = {
   // Forms
   form: {
     label: 'block text-sm font-medium text-primary-300 mb-2',
-    input: 'w-full px-4 py-2 bg-primary-900 border border-primary-600 rounded-lg text-primary-50 placeholder-primary-400 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent transition-all duration-200',
-    select: 'w-full px-4 py-2 bg-primary-900 border border-primary-600 rounded-lg text-primary-50 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent transition-all duration-200',
+    input: 'w-64 px-4 py-2 bg-primary-900 border border-primary-600 rounded-lg text-primary-50 placeholder-primary-400 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent transition-all duration-200',
+    select: 'w-full px-2 py-2 bg-primary-900 border border-primary-600 rounded-lg text-primary-50 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent transition-all duration-200',
     error: 'mt-1 text-sm text-red-400',
-    help: 'mt-1 text-sm text-primary-400'
+    help: 'mt-1 text-sm text-primary-400',
+    helper: 'w-full bg-primary-900 text-primary-50 focus:outline-none'
   },
   
   // Badges

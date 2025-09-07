@@ -172,13 +172,13 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>
-      <h1 class={styles.text.h1}>User Accounts</h1>
-      <p class={styles.text.muted}>Manage individual user accounts and permissions</p>
+      <h1 class="text-3xl font-bold text-primary-100">User Accounts</h1>
+      <p class="text-primary-400">Manage individual user accounts and permissions</p>
     </div>
     
     <button 
       on:click={() => showCreateModal = true}
-      class={cn(styles.button.base, styles.button.primary, styles.button.size.md)}
+      class="flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold bg-accent-600 text-primary-50 hover:bg-accent-700 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-primary-900 focus-visible:ring-accent-500"
     >
       <Plus class="w-5 h-5" />
       Create User
@@ -186,14 +186,14 @@
   </div>
 
   <!-- Search Bar -->
-  <div class={cn(styles.card.base, styles.card.padding)}>
+  <div class="bg-primary-800 p-4 rounded-lg border border-primary-700">
     <div class="relative">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
+      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-primary-400" />
       <input
         type="text"
         placeholder="Search by username, email, or phone..."
         bind:value={searchQuery}
-        class={cn(styles.form.input, 'pl-10')}
+        class="w-full md:w-96 bg-primary-900 border border-primary-700 rounded-md pl-10 pr-3 py-2 text-primary-100 placeholder-primary-500 focus:border-accent-500 focus:ring-0"
       />
     </div>
   </div>
@@ -201,77 +201,78 @@
   <!-- Users Grid -->
   {#if loading}
     <div class="flex items-center justify-center py-12">
-      <p class="text-text-muted">Loading users...</p>
+      <p class="text-primary-400">Loading users...</p>
     </div>
   {:else if error}
-    <div class={cn(styles.alert.base, styles.alert.error)}>
+    <div class="p-4 rounded-md bg-accent-900/50 text-accent-300 border border-accent-800">
       {error}
     </div>
   {:else if filteredUsers.length === 0}
-    <div class="flex flex-col items-center justify-center py-12">
-      <User class="w-12 h-12 text-text-muted mb-3" />
-      <p class="text-text-muted">No users found</p>
+    <div class="flex flex-col items-center justify-center py-12 text-center">
+      <User class="w-12 h-12 text-primary-600 mb-3" />
+      <h3 class="text-lg font-semibold text-primary-300">No Users Found</h3>
+      <p class="text-primary-400">The search did not return any results.</p>
     </div>
   {:else}
-    <div class={styles.grid.cols3}>
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
       {#each filteredUsers as user (user.id)}
-        <div class={cn(styles.card.base, styles.card.padding, styles.card.hover)}>
+        <div class="bg-primary-800 p-5 rounded-lg border border-primary-700 hover:border-primary-600 transition-colors flex flex-col">
           <!-- User Header -->
           <div class="flex items-start justify-between mb-4">
-            <div class="flex items-center gap-3">
-              <div class="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center">
-                <span class="text-lg font-bold text-accent">
+            <div class="flex items-center gap-4">
+              <div class="w-12 h-12 bg-accent-500/10 rounded-full flex items-center justify-center">
+                <span class="text-xl font-bold text-accent-400">
                   {user.username.charAt(0).toUpperCase()}
                 </span>
               </div>
               <div>
-                <h3 class="font-semibold text-text-primary">{user.username}</h3>
-                <span class={cn(
-                  styles.badge.base,
-                  user.role === 'Admin' ? styles.badge.error : styles.badge.info
+                <h3 class="font-semibold text-primary-100">{user.username}</h3>
+                <span class= {cn(
+                  'px-2.5 py-0.5 text-xs font-semibold rounded-full',
+                  user.role === 'Admin' ? 'bg-accent-500/20 text-accent-300' : 'bg-primary-700/80 text-primary-200'
                 )}>
                   {user.role}
                 </span>
               </div>
             </div>
             <span class={cn(
-              'text-xs px-2 py-1 rounded-full',
-              user.status === 'active' ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+              'text-xs px-2 py-1 rounded-full font-medium',
+              user.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-primary-700 text-primary-300'
             )}>
               {user.status}
             </span>
           </div>
 
           <!-- User Details -->
-          <div class="space-y-3 mb-4">
-            <div class="flex items-center gap-2 text-sm">
-              <Mail class="w-4 h-4 text-text-muted" />
-              <span class="text-text-secondary truncate">{user.email}</span>
+          <div class="space-y-3 mb-4 text-sm">
+            <div class="flex items-center gap-3">
+              <Mail class="w-4 h-4 text-primary-500" />
+              <span class="text-primary-300 truncate">{user.email}</span>
             </div>
-            <div class="flex items-center gap-2 text-sm">
-              <Phone class="w-4 h-4 text-text-muted" />
-              <span class="text-text-secondary">{user.phone}</span>
+            <div class="flex items-center gap-3">
+              <Phone class="w-4 h-4 text-primary-500" />
+              <span class="text-primary-300">{user.phone || 'Not provided'}</span>
             </div>
-            <div class="flex items-center gap-2 text-sm">
-              <HardDrive class="w-4 h-4 text-text-muted" />
-              <span class="text-text-secondary">
-                {formatBytes(user.quotaUsed)} / {formatBytes(user.quotaLimit)}
+            <div class="flex items-center gap-3">
+              <HardDrive class="w-4 h-4 text-primary-500" />
+              <span class="text-primary-300">
+                {formatBytes(user.quotaUsed)} / <span class="text-primary-400">{formatBytes(user.quotaLimit)}</span>
               </span>
             </div>
           </div>
 
           <!-- Storage Progress Bar -->
           <div class="mb-4">
-            <div class="w-full h-2 bg-bg-primary rounded-full overflow-hidden">
+            <div class="w-full h-1.5 bg-primary-700 rounded-full overflow-hidden">
               <div 
-                class="h-full bg-accent transition-all duration-300"
+                class="h-full bg-accent-500 transition-all duration-300"
                 style="width: {Math.min(100, (user.quotaUsed / user.quotaLimit) * 100)}%"
               ></div>
             </div>
           </div>
 
           <!-- Dates -->
-          <div class="text-xs text-text-muted mb-4">
+          <div class="text-xs text-primary-500 mb-5">
             <p>Created: {formatDate(user.createdAt)}</p>
             <p>Last login: {formatDate(user.lastLogin)}</p>
           </div>
@@ -280,14 +281,14 @@
           <div class="flex gap-2">
             <button
               on:click={() => openEditModal(user)}
-              class={cn(styles.button.base, styles.button.secondary, styles.button.size.sm, 'flex-1')}
+              class={cn(styles.button.base, styles.button.secondary, styles.button.size.sm, 'flex-1 cursor-pointer')}
             >
               <Edit2 class="w-4 h-4" />
               Edit
             </button>
             <button
               on:click={() => deleteUser(user)}
-              class={cn(styles.button.base, styles.button.danger, styles.button.size.sm, 'flex-1')}
+              class={cn(styles.button.base, styles.button.danger, styles.button.size.sm, 'flex-1 cursor-pointer')}
             >
               <Trash2 class="w-4 h-4" />
               Delete
@@ -302,106 +303,93 @@
 <!-- Edit User Modal -->
 {#if showEditModal && editingUser}
   <div 
-    class={styles.modal.backdrop}
+    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-primary-900/80 backdrop-blur-sm"
     on:click={() => showEditModal = false}
     tabindex="0"
     role="button"
     aria-label="Close edit modal"
     on:keydown={(e) => {
-      if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
+      if (e.key === 'Escape') {
         showEditModal = false;
       }
     }}
   >
-    <div class={cn(styles.modal.content, 'max-w-2xl')} on:pointerdown|stopPropagation>
-      <div class={styles.modal.header}>
-        <h2 class={styles.text.h2}>Edit User: {editingUser.username}</h2>
-        <button 
-          on:click={() => showEditModal = false}
-          class={cn(styles.button.base, styles.button.ghost, styles.button.size.sm)}
-        >
-          <X class="w-5 h-5" />
-        </button>
-      </div>
-      
-      <div class={styles.modal.body}>
-        <div class="space-y-4">
+<div 
+  class="bg-primary-800 rounded-lg shadow-xl w-full max-w-2xl border border-primary-700" 
+  on:click|stopPropagation
+  on:keydown={(e) => {
+    if (e.key === 'Escape') {
+      showEditModal = false;
+    }
+  }}
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="edit-modal-title"
+  tabindex="-1"
+>
+  <div class="flex items-center justify-between p-4 border-b border-primary-700">
+    <h2 id="edit-modal-title" class="text-xl font-semibold text-primary-100">Edit User: {editingUser.username}</h2>
+    <button 
+      on:click={() => showEditModal = false}
+      class="p-1 text-primary-400 hover:text-primary-100 hover:bg-primary-700 rounded-full transition-colors"
+      aria-label="Close dialog"
+    >
+      <X class="w-5 h-5" />
+    </button>
+  </div>
+  
+    <div class="p-6">
+      <div class="space-y-4">
+        <!-- Form fields -->
+        <div>
+          <label for="edit-email" class="block text-sm font-medium text-primary-300 mb-1">Email</label>
+          <input id="edit-email" type="email" bind:value={editForm.email} class="w-full bg-primary-900 border border-primary-700 rounded-md px-3 py-2 text-primary-100 placeholder-primary-500 focus:border-accent-500 focus:ring-accent-500" />
+        </div>
+        
+        <div>
+          <label for="edit-phone" class="block text-sm font-medium text-primary-300 mb-1">Phone</label>
+          <input id="edit-phone" type="tel" bind:value={editForm.phone} class="w-full bg-primary-900 border border-primary-700 rounded-md px-3 py-2 text-primary-100 placeholder-primary-500 focus:border-accent-500 focus:ring-accent-500" />
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label for="edit-email" class={styles.form.label}>Email</label>
-            <input 
-              id="edit-email"
-              type="email" 
-              bind:value={editForm.email}
-              class={styles.form.input}
-            />
+            <label for="edit-role" class="block text-sm font-medium text-primary-300 mb-1">Role</label>
+            <select id="edit-role" bind:value={editForm.role} class="w-full bg-primary-900 border border-primary-700 rounded-md px-3 py-2 text-primary-100 focus:border-accent-500 focus:ring-accent-500">
+              <option value="User">User</option>
+              <option value="Admin">Admin</option>
+            </select>
           </div>
           
           <div>
-            <label for="edit-phone" class={styles.form.label}>Phone</label>
-            <input 
-              id="edit-phone"
-              type="tel" 
-              bind:value={editForm.phone}
-              class={styles.form.input}
-            />
-          </div>
-          
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label for="edit-role" class={styles.form.label}>Role</label>
-              <select id="edit-role" bind:value={editForm.role} class={styles.form.select}>
-                <option value="User">User</option>
-                <option value="Admin">Admin</option>
-              </select>
-            </div>
-            
-            <div>
-              <label for="edit-status" class={styles.form.label}>Status</label>
-              <select id="edit-status" bind:value={editForm.status} class={styles.form.select}>
-                <option value="active">Active</option>
-                <option value="disabled">Disabled</option>
-                <option value="suspended">Suspended</option>
-              </select>
-            </div>
-          </div>
-          
-          <div>
-            <label for="edit-quota" class={styles.form.label}>Storage Quota (bytes)</label>
-            <input 
-              id="edit-quota"
-              type="number" 
-              bind:value={editForm.quotaLimit}
-              class={styles.form.input}
-            />
-            <p class={styles.form.help}>
-              Current: {formatBytes(editForm.quotaLimit)}
-            </p>
-          </div>
-          
-          <div>
-            <label for="edit-password" class={styles.form.label}>New Password (leave empty to keep current)</label>
-            <input 
-              id="edit-password"
-              type="password" 
-              bind:value={editForm.password}
-              placeholder="Enter new password..."
-              class={styles.form.input}
-            />
+            <label for="edit-status" class="block text-sm font-medium text-primary-300 mb-1">Status</label>
+            <select id="edit-status" bind:value={editForm.status} class="w-full bg-primary-900 border border-primary-700 rounded-md px-3 py-2 text-primary-100 focus:border-accent-500 focus:ring-accent-500">
+              <option value="active">Active</option>
+              <option value="disabled">Disabled</option>
+              <option value="suspended">Suspended</option>
+            </select>
           </div>
         </div>
+        
+        <div>
+          <label for="edit-quota" class="block text-sm font-medium text-primary-300 mb-1">Storage Quota (bytes)</label>
+          <input id="edit-quota" type="number" bind:value={editForm.quotaLimit} class="w-full bg-primary-900 border border-primary-700 rounded-md px-3 py-2 text-primary-100 placeholder-primary-500 focus:border-accent-500 focus:ring-accent-500" />
+          <p class="text-xs text-primary-400 mt-1">
+            Current: {formatBytes(editForm.quotaLimit)}
+          </p>
+        </div>
+        
+        <div>
+          <label for="edit-password" class="block text-sm font-medium text-primary-300 mb-1">New Password (leave empty to keep current)</label>
+          <input id="edit-password" type="password" bind:value={editForm.password} placeholder="••••••••" class="w-full bg-primary-900 border border-primary-700 rounded-md px-3 py-2 text-primary-100 placeholder-primary-500 focus:border-accent-500 focus:ring-accent-500" />
+        </div>
       </div>
-      
-      <div class={styles.modal.footer}>
-        <button 
-          on:click={() => showEditModal = false}
-          class={cn(styles.button.base, styles.button.secondary, styles.button.size.md)}
-        >
+    </div>
+    
+      <div class="flex items-center justify-end gap-3 p-4 bg-primary-900/50 border-t border-primary-700 rounded-b-lg">
+        <button on:click={() => showEditModal = false} class="px-4 py-2 cursor-pointer text-sm font-semibold bg-primary-700 text-primary-100 hover:bg-primary-600 rounded-md transition-colors">
           Cancel
         </button>
-        <button 
-          on:click={saveUserChanges}
-          class={cn(styles.button.base, styles.button.primary, styles.button.size.md)}
-        >
+        <button on:click={saveUserChanges} class="flex cursor-pointer items-center justify-center gap-2 px-4 py-2 text-sm font-semibold bg-accent-600 text-primary-50 hover:bg-accent-700 rounded-md transition-colors">
           <Save class="w-4 h-4" />
           Save Changes
         </button>

@@ -204,7 +204,7 @@
       <div class="flex items-center justify-between">
         <div>
           <p class={styles.text.small}>Total Users</p>
-          <p class="text-2xl font-bold text-text-primary mt-1">{stats.totalUsers}</p>
+          <p class="text-2xl font-bold text-primary-100 mt-1">{stats.totalUsers}</p>
         </div>
         <div class="p-3 bg-blue-500/10 rounded-lg">
           <Users class="w-6 h-6 text-blue-400" />
@@ -216,7 +216,7 @@
       <div class="flex items-center justify-between">
         <div>
           <p class={styles.text.small}>Active Users</p>
-          <p class="text-2xl font-bold text-text-primary mt-1">{stats.activeUsers}</p>
+          <p class="text-2xl font-bold text-primary-100 mt-1">{stats.activeUsers}</p>
         </div>
         <div class="p-3 bg-green-500/10 rounded-lg">
           <Activity class="w-6 h-6 text-green-400" />
@@ -228,7 +228,7 @@
       <div class="flex items-center justify-between">
         <div>
           <p class={styles.text.small}>Storage Used</p>
-          <p class="text-2xl font-bold text-text-primary mt-1">
+          <p class="text-2xl font-bold text-primary-100 mt-1">
             {formatBytes(stats.usedStorage)}
           </p>
         </div>
@@ -242,7 +242,7 @@
       <div class="flex items-center justify-between">
         <div>
           <p class={styles.text.small}>Admin Users</p>
-          <p class="text-2xl font-bold text-text-primary mt-1">
+          <p class="text-2xl font-bold text-primary-100 mt-1">
             {users.filter(u => u.role === 'Admin').length}
           </p>
         </div>
@@ -256,41 +256,45 @@
   <!-- Users Table Section -->
   <div class={cn(styles.card.base, 'overflow-hidden')}>
     <!-- Table Header with Filters -->
-    <div class="px-6 py-4 border-b border-border">
+    <div class="px-6 py-4 border-b border-primary-700">
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h3 class={styles.text.h3}>User Accounts</h3>
         
         <div class="flex items-center gap-3">
           <!-- Search -->
           <div class="relative">
-            <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary-400" />
             <input
               type="text"
               placeholder="Search users..."
               bind:value={searchQuery}
-              class={cn(styles.form.input, 'pl-10 w-64')}
+              class={cn(styles.form.input, 'pl-10')}
             />
           </div>
 
           <!-- Role Filter -->
-          <select 
-            bind:value={roleFilter}
-            class={cn(styles.form.select, 'w-32')}
-          >
-            <option value="all">All Roles</option>
-            <option value="Admin">Admin</option>
-            <option value="User">User</option>
-          </select>
+           <div class={cn(styles.form.select)}>
+            <select 
+              bind:value={roleFilter}
+              class={cn(styles.form.helper)}
+            >
+              <option value="all">All Roles</option>
+              <option value="Admin">Admin</option>
+              <option value="User">User</option>
+            </select>
+           </div>
 
           <!-- Status Filter -->
-          <select 
-            bind:value={statusFilter}
-            class={cn(styles.form.select, 'w-32')}
-          >
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="disabled">Disabled</option>
-          </select>
+          <div class={cn(styles.form.select)}>
+            <select 
+              bind:value={statusFilter}
+              class={cn(styles.form.helper)}
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </div>
 
           <!-- Actions -->
           <button
@@ -310,7 +314,7 @@
           </button>
 
           <button
-            class={cn(styles.button.base, styles.button.primary, styles.button.size.sm)}
+            class={cn(styles.button.base, styles.button.primary, styles.button.size.sm, 'w-102')}
           >
             <UserPlus class="w-4 h-4" />
             Add User
@@ -323,7 +327,7 @@
     <div class={styles.table.wrapper}>
       {#if loading}
         <div class="flex items-center justify-center py-12">
-          <div class="text-text-muted">Loading users...</div>
+          <div class="text-primary-400">Loading users...</div>
         </div>
       {:else if error}
         <div class={cn(styles.alert.base, styles.alert.error, 'm-6')}>
@@ -331,12 +335,12 @@
         </div>
       {:else if filteredUsers.length === 0}
         <div class="flex flex-col items-center justify-center py-12">
-          <Users class="w-12 h-12 text-text-muted mb-3" />
-          <p class="text-text-muted">No users found</p>
+          <Users class="w-12 h-12 text-primary-400 mb-3" />
+          <p class="text-primary-400">No users found</p>
         </div>
       {:else}
         <table class={styles.table.base}>
-          <thead class={styles.table.header}>
+          <thead class="bg-primary-900/40 border-b border-primary-700">
             <tr>
               <th class={styles.table.headerCell}>Username</th>
               <th class={styles.table.headerCell}>Email</th>
@@ -350,8 +354,8 @@
               <tr class={styles.table.row}>
                 <td class={styles.table.cellPrimary}>
                   <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 bg-accent/20 rounded-full flex items-center justify-center">
-                      <span class="text-xs font-medium text-accent">
+                    <div class="w-8 h-8 bg-accent-500/20 rounded-full flex items-center justify-center">
+                      <span class="text-xs font-medium text-accent-400">
                         {user.username.charAt(0).toUpperCase()}
                       </span>
                     </div>
@@ -366,13 +370,14 @@
                 </td>
                 <td class={styles.table.cell}>
                   <div class="space-y-1">
-                    <div class="flex items-center justify-between text-xs">
+                    <div class="flex items-center space-x-2 text-xs">
                       <span>{formatBytes(user.quotaUsed)}</span>
-                      <span class="text-text-muted">/ {formatBytes(user.quotaLimit)}</span>
+                      <span>/</span>
+                      <span class="text-primary-400">{formatBytes(user.quotaLimit)}</span>
                     </div>
-                    <div class="w-32 h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
+                    <div class="w-32 h-1.5 bg-primary-700 rounded-full overflow-hidden">
                       <div 
-                        class="h-full bg-accent transition-all duration-300"
+                        class="h-full bg-accent-500 transition-all duration-300"
                         style="width: {getQuotaPercentage(user.quotaUsed, user.quotaLimit)}%"
                       ></div>
                     </div>
@@ -382,23 +387,23 @@
                   <div class="relative">
                     <button
                       on:click={() => actionMenuOpen = actionMenuOpen === user.id ? null : user.id}
-                      class={cn(styles.button.base, styles.button.ghost, styles.button.size.sm)}
+                      class="{cn(styles.button.base, styles.button.ghost, styles.button.size.sm)}"
                     >
                       <MoreVertical class="w-4 h-4" />
                     </button>
                     
                     {#if actionMenuOpen === user.id}
-                      <div class="absolute right-0 mt-2 w-48 bg-bg-secondary border border-border rounded-lg shadow-lg z-10">
+                      <div class="absolute right-0 mt-2 w-48 bg-primary-800 border border-primary-700 rounded-lg shadow-lg z-10">
                         <button
                           on:click={() => handleEditUser(user)}
-                          class="w-full px-4 py-2 text-left text-sm text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors"
+                          class="w-full px-4 py-2 text-left text-sm text-primary-300 hover:bg-primary-700 hover:text-primary-100 transition-colors"
                         >
                           <Edit2 class="inline w-4 h-4 mr-2" />
                           Edit User
                         </button>
                         <button
                           on:click={() => handleDeleteUser(user)}
-                          class="w-full px-4 py-2 text-left text-sm text-error hover:bg-bg-tertiary transition-colors"
+                          class="w-full px-4 py-2 text-left text-sm text-accent-500 hover:bg-primary-700 transition-colors"
                         >
                           <Trash2 class="inline w-4 h-4 mr-2" />
                           Delete User
