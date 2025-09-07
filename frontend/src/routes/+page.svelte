@@ -48,7 +48,7 @@
 
 <svelte:head>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
 </svelte:head>
 
@@ -112,7 +112,7 @@
                         Don't have an account? 
                         <a 
                             href="/register" 
-                            class="bg-none border-none text-accent-500 font-medium cursor-pointer p-0 text-inherit no-underline transition-colors duration-200 hover:underline hover:text-accent-600"
+                            class="bg-none border-none text-accent-500 font-medium cursor-pointer p-0  no-underline transition-colors duration-200 hover:underline hover:text-accent-600"
                         >
                             Register here
                         </a>

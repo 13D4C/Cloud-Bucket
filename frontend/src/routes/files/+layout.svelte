@@ -1,15 +1,39 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Home, Trash2, Cloud, Folder } from 'lucide-svelte';
+	import { Home, Trash2, Cloud, Folder, Shield } from 'lucide-svelte';
     import { page } from '$app/stores';
+    import { onMount } from 'svelte';
+    import { browser } from '$app/environment';
+
+    let isAdmin = false;
+
+    onMount(() => {
+        if (browser) {
+            const token = localStorage.getItem('jwt_token');
+            if (token) {
+                try {
+                    // Decode the payload part of the JWT
+                    const payload = JSON.parse(atob(token.split('.')[1]));
+                    const userRole = payload.role || 'User';
+
+                    if (userRole === 'Admin') {
+                        isAdmin = true;
+                    }
+                } catch (error) {
+                    console.error('Failed to parse JWT token:', error);
+                    handleLogout();
+                }
+            }
+        }
+    });
 
 	function handleLogout() {
 		localStorage.removeItem('jwt_token');
 		goto('/');
 	}
 
-    $: isTrash = $page.url.searchParams.get('view') === 'trash';
-    $: isShare = $page.url.searchParams.get('view') === 'share';
+    $: isTrash = $page.url.pathname === '/files/trash';
+    $: isShare = $page.url.pathname === '/files/share';
 </script>
 
 <div class="flex h-screen bg-primary-900">
@@ -27,20 +51,32 @@
 				<span>My Files</span>
 			</a>
 			<a 
-				href="/files?view=trash" 
+				href="/files/trash" 
 				class="flex items-center gap-3 px-4 py-3 rounded-lg text-primary-300 font-medium transition-all duration-200 hover:bg-primary-700 hover:text-primary-50 {isTrash ? 'bg-accent-500/15 text-accent-500 shadow-inner shadow-accent-500/20 border-l-2 border-accent-500' : ''}"
 			>
 				<Trash2 size={20} />
 				<span>Trash</span>
 			</a>
             <a 
-				href="/files?view=share" 
+				href="/files/share" 
 				class="flex items-center gap-3 px-4 py-3 rounded-lg text-primary-300 font-medium transition-all duration-200 hover:bg-primary-700 hover:text-primary-50 {isShare ? 'bg-accent-500/15 text-accent-500 shadow-inner shadow-accent-500/20 border-l-2 border-accent-500' : ''}"
 			>
 				<Folder size={20} />
-				<span>share</span>
+				<span>Share</span>
 			</a>
 		</nav>
+
+        {#if isAdmin}
+            <nav class="mt-auto pt-4 border-t border-primary-700">
+                <a
+                    href="/admin"
+                    class="flex items-center gap-3 px-4 py-3 rounded-lg text-primary-300 font-medium transition-all duration-200 hover:bg-primary-700 hover:text-primary-50"
+                >
+                    <Shield size={20} />
+                    <span>Admin Panel</span>
+                </a>
+            </nav>
+        {/if}
 	</aside>
 
 	<main class="flex-1 flex flex-col overflow-y-hidden">

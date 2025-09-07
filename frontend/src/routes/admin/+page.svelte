@@ -374,7 +374,7 @@
                       <div 
                         class="h-full bg-accent transition-all duration-300"
                         style="width: {getQuotaPercentage(user.quotaUsed, user.quotaLimit)}%"
-                      />
+                      ></div>
                     </div>
                   </div>
                 </td>
