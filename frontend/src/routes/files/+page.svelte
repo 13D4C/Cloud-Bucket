@@ -26,6 +26,7 @@
 
 	// --- Computed State ---
 	$: isTrashView = $page.url.searchParams.get('view') === 'trash';
+	$: isShareView = $page.url.searchParams.get('view') === 'share';
 	$: currentPath = isTrashView ? '' : ($page.url.searchParams.get('path') || '');
 	$: inSelectionMode = selectedItems.size > 0;
     $: allSelected = items.length > 0 && selectedItems.size === items.length;

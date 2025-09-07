@@ -12,7 +12,7 @@
     async function fetchTrashItems() {
         error_message = '';
         try {
-            const res = await fetchApi('/api/trash');
+            const res = await fetchApi('/api/share');
             if (!res.ok) {
                 const errData = await res.json();
                 throw new Error(errData.error || 'Could not fetch trash items');
@@ -59,25 +59,25 @@
 </script>
 
 <div class="mb-6">
-    <h1 class="text-3xl font-bold text-primary-50 m-0">Deleted Files</h1>
+    <h1 class="text-3xl font-bold text-primary-800 m-0">Deleted Files</h1>
 </div>
-<p class="text-primary-300 mt-1 mb-8">Items in the trash can be restored or deleted forever.</p>
+<p class="text-gray-600 mt-1 mb-8">Items in the trash can be restored or deleted forever.</p>
 
 {#if error_message}
-    <div class="bg-red-900/20 text-red-400 border border-red-800 p-4 rounded-lg mb-4 flex items-center gap-3">
+    <div class="bg-red-50 text-red-800 border border-red-200 p-4 rounded-lg mb-4 flex items-center gap-3">
         <AlertCircle size=18/> {error_message}
     </div>
 {/if}
 
-<div class="border border-primary-700 rounded-xl overflow-hidden bg-primary-800">
-    <div class="grid grid-cols-2 px-6 py-3 bg-primary-900 font-medium text-primary-400 uppercase text-xs tracking-wider border-b border-primary-700">
+<div class="border border-gray-200 rounded-xl overflow-hidden">
+    <div class="grid grid-cols-2 px-6 py-3 bg-gray-50 font-medium text-gray-600 uppercase text-xs tracking-wider border-b border-gray-200">
         <div>Name</div>
         <div>Actions</div>
     </div>
 
     {#each trashItems as item (item.path)}
-        <div class="grid grid-cols-2 items-center px-6 py-4 border-b border-primary-700 transition-colors duration-200 hover:bg-primary-700 last:border-0" transition:fade|local>
-            <div class="flex items-center gap-4 font-medium text-primary-50 overflow-hidden" title={item.originalName || item.name}>
+        <div class="grid grid-cols-2 items-center px-6 py-4 border-b border-gray-100 transition-colors duration-200 hover:bg-gray-50 last:border-0" transition:fade|local>
+            <div class="flex items-center gap-4 font-medium text-primary-800 overflow-hidden" title={item.originalName || item.name}>
                 {#if item.isDir}
                     <Folder size=20 color="#5DADE2" />
                 {:else}
@@ -87,13 +87,13 @@
             </div>
             <div class="flex gap-4">
                 <button 
-                    class="px-4 py-2 border border-primary-600 rounded-lg font-medium cursor-pointer flex items-center gap-2 transition-all duration-200 bg-primary-800 text-primary-300 hover:border-green-400 hover:bg-green-900/20 hover:text-green-400" 
+                    class="px-4 py-2 border border-gray-300 rounded-lg font-medium cursor-pointer flex items-center gap-2 transition-all duration-200 bg-white text-gray-700 hover:border-green-400 hover:bg-green-50 hover:text-green-700" 
                     on:click={() => handleRestore(item)}
                 >
                     <RotateCcw size=16 /> Restore
                 </button>
                 <button 
-                    class="px-4 py-2 border border-primary-600 rounded-lg font-medium cursor-pointer flex items-center gap-2 transition-all duration-200 bg-primary-800 text-primary-300 hover:border-red-400 hover:bg-red-900/20 hover:text-red-400" 
+                    class="px-4 py-2 border border-gray-300 rounded-lg font-medium cursor-pointer flex items-center gap-2 transition-all duration-200 bg-white text-gray-700 hover:border-red-400 hover:bg-red-50 hover:text-red-700" 
                     on:click={() => handlePermanentDelete(item)}
                 >
                     <Trash2 size=16 /> Delete Forever
@@ -101,9 +101,9 @@
             </div>
         </div>
     {:else}
-        <div class="text-center py-16 text-primary-400" transition:fade>
+        <div class="text-center py-16 text-gray-600" transition:fade>
             <Trash2 size=48 />
-            <h3 class="my-4 mb-2 text-primary-300">Your trash is empty</h3>
+            <h3 class="my-4 mb-2 text-gray-700">Your trash is empty</h3>
             <p>Items you delete will appear here.</p>
         </div>
     {/each}
