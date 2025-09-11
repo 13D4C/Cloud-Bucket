@@ -59,7 +59,7 @@
 </script>
 
 <div class="mb-6">
-    <h1 class="text-3xl font-bold text-primary-50 m-0">Deleted Files</h1>
+    <h1 class="text-3xl font-bold text-primary-50 m-0">Share Files</h1>
 </div>
 <p class="text-primary-300 mt-1 mb-8">Items in the trash can be restored or deleted forever.</p>
 

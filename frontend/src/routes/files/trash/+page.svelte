@@ -6,7 +6,16 @@
     import { th } from 'date-fns/locale';
     import { fade } from 'svelte/transition';
 
-    let trashItems: any[] = [];
+    interface TrashItem {
+        id: string; // Add the unique ID field
+        path: string;
+        isDir: boolean;
+        name: string;
+        size?: number;
+        modified: string;
+    }
+
+    let trashItems: TrashItem[] = [];
     let error_message = '';
     let isLoading = true;
 
@@ -85,15 +94,15 @@
     </div>
 
     {#if !isLoading}
-        {#each trashItems as item (item.path)}
+        {#each trashItems as item (item.id)}
             <div class="grid grid-cols-2 items-center px-6 py-4 border-b border-primary-700 transition-colors duration-200 hover:bg-primary-700 last:border-0" transition:fade|local>
-                <div class="flex items-center gap-4 font-medium text-primary-50 overflow-hidden" title={item.originalName || item.name}>
+                <div class="flex items-center gap-4 font-medium text-primary-50 overflow-hidden" title={item.name}>
                     {#if item.isDir}
                         <Folder size=20 color="#5DADE2" />
                     {:else}
                         <FileText size=20 color="#6C757D" />
                     {/if}
-                    <span class="whitespace-nowrap overflow-hidden text-ellipsis">{item.originalName || item.name}</span>
+                    <span class="whitespace-nowrap overflow-hidden text-ellipsis">{item.name}</span>
                 </div>
                 <div class="flex gap-4">
                     <button 
@@ -111,7 +120,7 @@
                 </div>
             </div>
         {:else}
-            <div class="text-center py-16 text-primary-400" transition:fade>
+            <div class="flex flex-col justify-center items-center text-center py-16 text-primary-400" transition:fade>
                 <Trash2 size=48 />
                 <h3 class="my-4 mb-2 text-primary-300">Your trash is empty</h3>
                 <p>Items you delete will appear here.</p>

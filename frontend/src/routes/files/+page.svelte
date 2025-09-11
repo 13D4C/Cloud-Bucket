@@ -2,7 +2,8 @@
     import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import * as tus from 'tus-js-client';
-	import { Folder, FileText, UploadCloud, Home, Trash2, ChevronRight, Download, X, AlertCircle, Plus, Clock, CheckCircle, XCircle, RotateCcw, Upload, CornerLeftUp } from 'lucide-svelte';
+	import { Folder, FileText, UploadCloud, Home, ChevronRight, Download, X, AlertCircle, Plus, Clock, CheckCircle, XCircle, Upload, CornerLeftUp } from 'lucide-svelte';
+    import { Trash2 } from 'lucide-svelte'; // Correctly placed Trash2 import
 	import { formatDistanceToNow } from 'date-fns';
 	import { th } from 'date-fns/locale';
     import { fetchApi } from '$lib/api';
@@ -10,10 +11,10 @@
     import { fly, fade } from 'svelte/transition';
 
 	interface FileItem {
+        id: string;
 		path: string;
 		isDir: boolean;
-		name: string;
-		originalName?: string;
+		name: string; // Standardized to use 'name' for display
 		size?: number;
 		modified: string;
 	}
@@ -25,7 +26,7 @@
 	let error_message = '';
 	let showCreateFolderModal = false;
 	let newFolderName = '';
-    let draggedItem: any = null;
+    let draggedItem: FileItem | null = null;
     let isDraggingOver = false;
     let uploadQueue: { id: number; file: File; progress: number; status: 'uploading' | 'preparing' | 'finalizing' | 'done' | 'error'; error?: string; path?: string; }[] = [];
     let totalUploadProgress = 0;
@@ -38,7 +39,7 @@
 	$: inSelectionMode = selectedItems.size > 0;
     $: allSelected = items.length > 0 && selectedItems.size === items.length;
 	$: breadcrumbs = [{ name: 'My Files', path: '/files' }].concat(
-		currentPath.split('/').filter(p => p).map((part, i, arr) => ({ name: part, path: `/files?path=${arr.slice(0, i + 1).join('/')}` }))
+		currentPath.split('/').filter(p => p).map((part, i, arr) => ({ name: part, path: `/files?path=/${arr.slice(0, i + 1).join('/')}` }))
 	);
     $: {
         if (files) {
@@ -73,8 +74,9 @@
                 throw new Error(errData.error || 'Failed to fetch items');
             }
 			const allItems: FileItem[] = (await res.json()) || [];
+            // --- MODIFIED: Standardized sorting to use `name` property ---
 			folders = allItems.filter((item: FileItem) => item.isDir).sort((a: FileItem, b: FileItem) => a.name.localeCompare(b.name));
-			files = allItems.filter((item: FileItem) => !item.isDir).sort((a: FileItem, b: FileItem) => (a.originalName || '').localeCompare(b.originalName || ''));
+			files = allItems.filter((item: FileItem) => !item.isDir).sort((a: FileItem, b: FileItem) => a.name.localeCompare(b.name));
             items = [...folders, ...files];
 		} catch (error: any) {
 			console.error("Fetch Error:", error);
@@ -84,21 +86,36 @@
 	$: if ($page.url) { fetchData(); selectedItems = new Set(); }
 
 	// --- Handlers for Selection ---
-    function toggleSelect(path: string) {
+    function toggleSelect(id: string) {
         const newSelectedItems = new Set(selectedItems);
-        if (newSelectedItems.has(path)) {
-            newSelectedItems.delete(path);
+        if (newSelectedItems.has(id)) {
+            newSelectedItems.delete(id);
         } else {
-            newSelectedItems.add(path);
+            newSelectedItems.add(id);
         }
         selectedItems = newSelectedItems;
     }
     async function handleBulkDelete() {
         if (!confirm(`Are you sure you want to move ${selectedItems.size} items to the trash?`)) return;
+        const itemsById = new Map(items.map(item => [item.id, item]));
+        const file_ids: number[] = [];
+        const folder_ids: string[] = [];
+
+        for (const id of selectedItems) {
+            const item = itemsById.get(id);
+            if (item) {
+                if (item.isDir) {
+                    folder_ids.push(id);
+                } else {
+                    // Backend expects file IDs as integers
+                    file_ids.push(parseInt(id, 10));
+                }
+            }
+        }
         try {
             await fetchApi('/api/items/bulk-delete', {
                 method: 'POST',
-                body: JSON.stringify({ paths: Array.from(selectedItems) })
+                body: JSON.stringify({ file_ids, folder_ids })
             });
             selectedItems = new Set();
             await fetchData();
@@ -107,20 +124,12 @@
         }
     }
     function toggleSelectAll() {
-        if (allSelected) {
-            selectedItems = new Set();
-        } else {
-            selectedItems = new Set(items.map(item => item.path));
-        }
+        if (allSelected) { selectedItems = new Set(); } else { selectedItems = new Set(items.map(item => item.id)); }
     }
     async function handleBulkDownload() {
         if (selectedItems.size === 0) return alert("Please select items to download.");
         try {
-            const res = await fetchApi('/api/items/bulk-download', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paths: Array.from(selectedItems) })
-            });
+            const res = await fetchApi('/api/items/bulk-download', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paths: Array.from(selectedItems) }) });
             if (!res.ok) {
                 const errorData = await res.json();
                 throw new Error(errorData.error || `Server responded with status ${res.status}`);
@@ -130,7 +139,8 @@
             const a = document.createElement('a');
             a.style.display = 'none';
             a.href = url;
-            a.download = `IT-Cloud-${new Date().toISOString().slice(0, 10)}.zip`;
+            // The backend now sets the filename via Content-Disposition, but this is a good fallback.
+            a.download = `IT-Cloud-Download.zip`; 
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
@@ -143,35 +153,16 @@
     }
 
 	// --- Drag & Drop Upload Handlers ---
-    function handleUploadDragOver(event: DragEvent) {
-        event.preventDefault();
-        if (!draggedItem) { isDraggingOver = true; }
-    }
+    function handleUploadDragOver(event: DragEvent) { event.preventDefault(); if (!draggedItem) { isDraggingOver = true; } }
     function handleUploadDragLeave() { isDraggingOver = false; }
-    function handleUploadDrop(event: DragEvent) {
-        event.preventDefault();
-        isDraggingOver = false;
-        if (!draggedItem && event.dataTransfer?.files) {
-            startMultipleUploads(event.dataTransfer.files);
-        }
-    }
+    function handleUploadDrop(event: DragEvent) { event.preventDefault(); isDraggingOver = false; if (!draggedItem && event.dataTransfer?.files) { startMultipleUploads(event.dataTransfer.files); } }
 
 	// --- Upload Logic ---
-	function handleFileSelect(event: Event) {
-        const input = event.target as HTMLInputElement;
-		if (input.files && input.files.length > 0) { startMultipleUploads(input.files); }
-		input.value = '';
-	}
-    function handleFolderSelect(event: Event) {
-        const input = event.target as HTMLInputElement;
-		if (input.files && input.files.length > 0) { startMultipleUploads(input.files); }
-		input.value = '';
-    }
+	function handleFileSelect(event: Event) { const input = event.target as HTMLInputElement; if (input.files) { startMultipleUploads(input.files); } input.value = ''; }
+    function handleFolderSelect(event: Event) { const input = event.target as HTMLInputElement; if (input.files) { startMultipleUploads(input.files); } input.value = ''; }
 	async function startMultipleUploads(fileList: FileList) {
         isUploading = true;
-        const newUploads = Array.from(fileList).map(file => ({
-            id: Date.now() + Math.random(), file, progress: 0, status: 'preparing' as const, path: (file as any).webkitRelativePath || file.name
-        }));
+        const newUploads = Array.from(fileList).map(file => ({ id: Date.now() + Math.random(), file, progress: 0, status: 'preparing' as const, path: (file as any).webkitRelativePath || file.name }));
         uploadQueue = [...uploadQueue, ...newUploads];
         const dirPaths = new Set<string>();
         newUploads.forEach(upload => {
@@ -183,9 +174,7 @@
             }
         });
         if (dirPaths.size > 0) {
-            const createFolderPromises = Array.from(dirPaths).map(path => 
-                fetchApi(`/api/folders/structure`, { method: 'POST', body: JSON.stringify({ path: `${currentPath}/${path}`.replace(/^\//, '') }) })
-            );
+            const createFolderPromises = Array.from(dirPaths).map(path => fetchApi(`/api/folders/structure`, { method: 'POST', body: JSON.stringify({ path: `${currentPath}/${path}`.replace(/^\//, '') }) }));
             await Promise.allSettled(createFolderPromises);
         }
         uploadQueue.forEach(item => { if (item.status === 'preparing') item.status = 'uploading'; });
@@ -199,11 +188,11 @@
         }, 5000);
     }
     function startSingleUpload(uploadItem: typeof uploadQueue[0]) {
-        return new Promise((resolve, reject) => {
+        return new Promise<void>((resolve, reject) => {
             const pathParts = (uploadItem.path || '').split('/');
             pathParts.pop();
             const folderPath = pathParts.join('/');
-            const destinationPath = currentPath ? `${currentPath}/${folderPath}`.replace(/^\//, '') : folderPath;
+            const destinationPath = currentPath ? `/${currentPath}/${folderPath}`.replace(/^\//, '') : `/${folderPath}`;
             const upload = new tus.Upload(uploadItem.file, {
                 endpoint: `http://localhost:8080/uploads/`,
                 retryDelays: [0, 3000, 5000],
@@ -223,14 +212,13 @@
                     const uploadId = upload.url?.split('/').pop();
                     if (!uploadId) {
                         if (index !== -1) { uploadQueue[index].status = 'error'; uploadQueue[index].error = 'Could not get finalize ID.'; uploadQueue = [...uploadQueue]; }
-                        reject(new Error('Finalize ID missing'));
-                        return;
+                        reject(new Error('Finalize ID missing')); return;
                     }
                     try {
-                        await fetchApi(`/api/finalize-upload`, { method: 'POST', body: JSON.stringify({ uploadId, destinationPath }) });
+                        await fetchApi(`/api/finalize-upload`, { method: 'POST', body: JSON.stringify({ uploadId, destinationPath: destinationPath || '/' }) });
                         index = uploadQueue.findIndex(item => item.id === uploadItem.id);
                         if (index !== -1) { uploadQueue[index].status = 'done'; uploadQueue = [...uploadQueue]; }
-                        resolve(true);
+                        resolve();
                     } catch (finalizeError: any) {
                         index = uploadQueue.findIndex(item => item.id === uploadItem.id);
                         if (index !== -1) { uploadQueue[index].status = 'error'; uploadQueue[index].error = finalizeError.message; uploadQueue = [...uploadQueue]; }
@@ -243,40 +231,48 @@
     }
 
 	// --- Other Handlers ---
-    function handleDragStart(item: any) { draggedItem = item; }
+    function handleDragStart(item: FileItem) { draggedItem = item; }
     function handleDragEnd() { draggedItem = null; }
-    async function handleDrop(destinationFolder: any) { if (draggedItem && draggedItem.path !== destinationFolder.path) { await handleMove(draggedItem, destinationFolder); } handleDragEnd(); }
-    async function handleMove(sourceItem: any, destinationFolder: any) { await fetchApi(`/api/move`,{method:'POST',body:JSON.stringify({sourcePath:sourceItem.path,destinationFolder:destinationFolder.path})}); await fetchData(); }
-	async function handleCreateFolder() { if (!newFolderName.trim()) return; await fetchApi(`/api/folders?path=${encodeURIComponent(currentPath)}`,{method:'POST',body:JSON.stringify({folderName:newFolderName.trim()})}); showCreateFolderModal=false; newFolderName=''; await fetchData(); }
-    async function handleMoveUp(item: any) {
+    async function handleDrop(destinationFolder: FileItem) { if (draggedItem && draggedItem.path !== destinationFolder.path) { await handleMove(draggedItem, destinationFolder); } handleDragEnd(); }
+    async function handleMove(sourceItem: FileItem, destinationFolder: FileItem) { await fetchApi(`/api/move`,{method:'POST',body:JSON.stringify({sourcePath:sourceItem.path,destinationFolder:destinationFolder.path})}); await fetchData(); }
+	async function handleCreateFolder() {
+        if (!newFolderName.trim()) return;
+        // --- CRITICAL CHANGE: Switched from query param to body for 'path' ---
+        await fetchApi(`/api/folders`, {
+            method: 'POST',
+            body: JSON.stringify({
+                folderName: newFolderName.trim(),
+                path: currentPath
+            })
+        });
+        showCreateFolderModal=false;
+        newFolderName='';
+        await fetchData();
+    }
+    async function handleMoveUp(item: FileItem) {
         if (!currentPath) return;
         const pathParts = currentPath.split('/');
         pathParts.pop();
         const destinationFolder = pathParts.join('/');
-        const itemName = item.originalName || item.name;
-        if (!confirm(`Move "${itemName}" up one level?`)) return;
+        if (!confirm(`Move "${item.name}" up one level?`)) return;
         try {
-            await fetchApi('/api/move', {
-                method: 'POST',
-                body: JSON.stringify({
-                    sourcePath: item.path,
-                    destinationFolder: destinationFolder 
-                })
-            });
+            await fetchApi('/api/move', { method: 'POST', body: JSON.stringify({ sourcePath: item.path, destinationFolder: destinationFolder }) });
             await fetchData();
         } catch (e: any) {
             alert(`Error moving item: ${e.message}`);
         }
     }
-    async function handleDownload(item: any) {
+    async function handleDownload(item: FileItem) {
         try {
             const token = localStorage.getItem('jwt_token');
             const endpoint = item.isDir ? 'download-folder' : 'download';
-            const downloadUrl = `http://localhost:8080/api/${endpoint}/${item.path}?token=${token}`;
-            const res = await fetch(downloadUrl);
+            // The backend requires the token for auth, but it's passed via middleware, not query params now.
+            // fetchApi handles the Authorization header automatically.
+            const downloadUrl = `http://localhost:8080/api/${endpoint}/${item.path}`;
+            const res = await fetchApi(downloadUrl, {}); // Pass true to get raw response
             if (!res.ok) {
                 let errorMessage = `Server responded with status ${res.status}`;
-                try { const errorData = await res.json(); errorMessage = errorData.error || errorData.message || errorMessage; } catch (e) { errorMessage = await res.text(); }
+                try { const errorData = await res.json(); errorMessage = errorData.error || errorMessage; } catch (e) { errorMessage = await res.text(); }
                 throw new Error(errorMessage);
             }
             const blob = await res.blob();
@@ -284,7 +280,8 @@
             const a = document.createElement('a');
             a.style.display = 'none';
             a.href = url;
-            a.download = item.originalName || `${item.name}.zip`;
+            // --- MODIFIED: Simplified download name logic ---
+            a.download = item.name + (item.isDir ? '.zip' : '');
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
@@ -439,13 +436,14 @@
 				<span>Recent Files</span>
 			</h2>
 			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-				{#each recentFiles as file (file.path)}
-					<div class="bg-primary-800 border border-primary-600 rounded-xl p-4 grid grid-cols-[auto_1fr_auto] items-center gap-4 overflow-hidden hover:border-primary-500 transition-colors">
+				{#each recentFiles as file (file.id)}
+					<!-- --- MODIFIED: Using file.name instead of file.originalName --- -->
+					<div class="bg-primary-800 border border-primary-600 rounded-xl p-4 grid grid-cols-[auto_1fr_auto] items-center gap-4 overflow-hidden hover:border-primary-500 transition-colors group">
 						<div class="flex-shrink-0">
 							<FileText size=28 class="text-primary-400" />
 						</div>
 						<div class="min-w-0 flex flex-col">
-							<span class="font-medium truncate text-primary-50" title={file.originalName}>{file.originalName}</span>
+							<span class="font-medium truncate text-primary-50" title={file.name}>{file.name}</span>
 							<span class="text-xs text-primary-400">{formatBytes(file.size ?? 0)}</span>
 						</div>
 						<div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -471,8 +469,8 @@
 				<div></div>
 			</div>
 			
-			{#each folders as folder (folder.path)}
-				<div class="grid grid-cols-[auto_3fr_1fr_1.5fr_auto] items-center px-6 py-4 border-b border-primary-700 last:border-b-0 hover:bg-primary-700 transition-colors cursor-pointer {selectedItems.has(folder.path) ? 'bg-primary-600' : ''} {draggedItem && draggedItem.path !== folder.path ? 'outline-2 outline-dashed outline-accent-500' : ''}" 
+			{#each folders as folder (folder.id)}
+				<div class="grid grid-cols-[auto_3fr_1fr_1.5fr_auto] items-center px-6 py-4 border-b border-primary-700 last:border-b-0 hover:bg-primary-700 transition-colors cursor-pointer {selectedItems.has(folder.id) ? 'bg-primary-600' : ''} {draggedItem && draggedItem.id !== folder.id ? 'outline-2 outline-dashed outline-accent-500' : ''}" 
 					 on:click={()=>goto(`/files?path=${folder.path}`)} 
 					 on:dragover|preventDefault 
 					 on:drop|preventDefault={()=>handleDrop(folder)} 
@@ -485,8 +483,8 @@
 					<button aria-label={`Select folder ${folder.name}`} class="pr-4 flex items-center" on:click|stopPropagation>
 						<input type="checkbox"
 								id="folder-checkbox"
-							   checked={selectedItems.has(folder.path)} 
-							   on:change={()=>toggleSelect(folder.path)}
+							   checked={selectedItems.has(folder.id)} 
+							   on:change={()=>toggleSelect(folder.id)}
 							   class="w-4 h-4 cursor-pointer bg-primary-700 border border-primary-600 rounded appearance-none checked:bg-accent-500 checked:border-accent-500 transition-colors"/>
 					</button>
 					
@@ -512,9 +510,9 @@
 				</div>
 			{/each}
 			
-			{#each files as file (file.path)}
+			{#each files as file (file.id)}
 				<!-- Add tabindex="0" to make the interactive row focusable -->
-				<div class="grid grid-cols-[auto_3fr_1fr_1.5fr_auto] items-center px-6 py-4 border-b border-primary-700 last:border-b-0 hover:bg-primary-700 transition-colors {selectedItems.has(file.path) ? 'bg-primary-600' : ''} {draggedItem?.path === file.path ? 'opacity-50' : ''}"
+				<div class="grid grid-cols-[auto_3fr_1fr_1.5fr_auto] items-center px-6 py-4 border-b border-primary-700 last:border-b-0 hover:bg-primary-700 transition-colors {selectedItems.has(file.id) ? 'bg-primary-600' : ''} {draggedItem?.id === file.id ? 'opacity-50' : ''}"
 					draggable="true"
 					on:dragstart={()=>handleDragStart(file)}
 					on:dragend={handleDragEnd}
@@ -522,14 +520,14 @@
 					tabindex="0">
 					<label class="pr-4 flex items-center cursor-pointer">
 						<input type="checkbox" 
-							checked={selectedItems.has(file.path)} 
-							on:change={()=>toggleSelect(file.path)}
+							checked={selectedItems.has(file.id)} 
+							on:change={()=>toggleSelect(file.id)}
 							class="w-4 h-4 cursor-pointer bg-primary-700 border border-primary-600 rounded appearance-none checked:bg-accent-500 checked:border-accent-500 transition-colors"/>
 					</label>
 					
 					<div class="flex items-center gap-4 font-medium text-primary-50">
 						<FileText size=20 class="text-primary-400"/>
-						<span>{file.originalName}</span>
+						<span>{file.name}</span>
 					</div>
 					
 					<div class="text-primary-300">{formatBytes(file.size ?? 0)}</div>
