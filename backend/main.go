@@ -58,12 +58,17 @@ func main() {
 	}
 
 	authHandler := handlers.NewAuthHandler(db)
-	fileHandler := handlers.NewFileHandler()
+	fileHandler := handlers.NewFileHandler(db)
 	adminHandler := handlers.NewAdminHandler(db)
 
 	router.POST("/register", authHandler.Register)
 	router.POST("/login", authHandler.Login)
 	router.Any("/uploads/*path", gin.WrapH(http.StripPrefix("/uploads/", tusdHandler)))
+
+	router.Use(func(c *gin.Context) {
+		c.Set("db", db)
+		c.Next()
+	})
 
 	api := router.Group("/api")
 	api.Use(middleware.AuthMiddleware())
@@ -72,6 +77,7 @@ func main() {
 		api.GET("/files", fileHandler.ListFiles)
 		api.POST("/folders", fileHandler.CreateFolder)
 		api.POST("/folders/structure", fileHandler.CreateFolderPath)
+
 		api.POST("/move", fileHandler.MoveItem)
 		api.POST("/finalize-upload", fileHandler.FinalizeUpload)
 		api.DELETE("/items/*path", fileHandler.DeleteItem)
