@@ -2,7 +2,7 @@
     import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import * as tus from 'tus-js-client';
-	import { Folder, FileText, UploadCloud, Home, ChevronRight, Download, X, AlertCircle, Plus, Clock, CheckCircle, XCircle, Upload, CornerLeftUp } from 'lucide-svelte';
+	import { Folder, FileText, UploadCloud, Home, ChevronRight, Download, X, AlertCircle, Plus, Clock, CheckCircle, XCircle, Upload, CornerLeftUp, Share } from 'lucide-svelte';
     import { Trash2 } from 'lucide-svelte'; // Correctly placed Trash2 import
 	import { formatDistanceToNow } from 'date-fns';
 	import { th } from 'date-fns/locale';
@@ -33,6 +33,13 @@
     let isUploading = false;
     let selectedItems = new Set<string>();
     let selectAllCheckbox: HTMLInputElement;
+
+    // --- Sharing State ---
+    let showShareModal = false;
+    let shareModalItem: FileItem | null = null;
+    let shareUsername = '';
+    let sharePermission = 'read';
+    let isSharing = false;
 
 	// --- Computed State ---
 	$: currentPath = $page.url.searchParams.get('path') || '';
@@ -152,6 +159,110 @@
         }
     }
 
+    // --- Sharing Functions ---
+    function openShareModal(item: FileItem) {
+        shareModalItem = item;
+        shareUsername = '';
+        sharePermission = 'read';
+        showShareModal = true;
+    }
+
+    function closeShareModal() {
+        showShareModal = false;
+        shareModalItem = null;
+        shareUsername = '';
+        sharePermission = 'read';
+        isSharing = false;
+    }
+
+    async function handleShare() {
+        if (!shareModalItem || !shareUsername.trim()) {
+            alert('Please enter a username to share with.');
+            return;
+        }
+
+        isSharing = true;
+        try {
+            const res = await fetchApi('/api/share', {
+                method: 'POST',
+                body: JSON.stringify({
+                    itemId: shareModalItem.id,
+                    itemType: shareModalItem.isDir ? 'folder' : 'file',
+                    shareWithUsername: shareUsername.trim(),
+                    permission: sharePermission
+                })
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || 'Failed to share item');
+            }
+
+            alert(`Successfully shared "${shareModalItem.name}" with ${shareUsername}`);
+            closeShareModal();
+        } catch (error: any) {
+            alert(`Error sharing item: ${error.message}`);
+        } finally {
+            isSharing = false;
+        }
+    }
+
+    async function handleBulkShare() {
+        if (selectedItems.size === 0) return alert("Please select items to share.");
+        if (!shareUsername.trim()) {
+            alert('Please enter a username to share with.');
+            return;
+        }
+
+        isSharing = true;
+        const itemsById = new Map(items.map(item => [item.id, item]));
+        const promises: Promise<any>[] = [];
+
+        for (const id of selectedItems) {
+            const item = itemsById.get(id);
+            if (item) {
+                promises.push(
+                    fetchApi('/api/share', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            itemId: item.id,
+                            itemType: item.isDir ? 'folder' : 'file',
+                            shareWithUsername: shareUsername.trim(),
+                            permission: sharePermission
+                        })
+                    })
+                );
+            }
+        }
+
+        try {
+            const results = await Promise.allSettled(promises);
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const result of results) {
+                if (result.status === 'fulfilled' && result.value.ok) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            }
+
+            if (successCount > 0) {
+                alert(`Successfully shared ${successCount} items with ${shareUsername}${failCount > 0 ? `. ${failCount} items failed to share.` : ''}`);
+            } else {
+                alert(`Failed to share items with ${shareUsername}`);
+            }
+
+            selectedItems = new Set();
+            closeShareModal();
+        } catch (error: any) {
+            alert(`Error sharing items: ${error.message}`);
+        } finally {
+            isSharing = false;
+        }
+    }
+
 	// --- Drag & Drop Upload Handlers ---
     function handleUploadDragOver(event: DragEvent) { event.preventDefault(); if (!draggedItem) { isDraggingOver = true; } }
     function handleUploadDragLeave() { isDraggingOver = false; }
@@ -161,7 +272,7 @@
 	function handleFileSelect(event: Event) { const input = event.target as HTMLInputElement; if (input.files) { startMultipleUploads(input.files); } input.value = ''; }
     function handleFolderSelect(event: Event) { const input = event.target as HTMLInputElement; if (input.files) { startMultipleUploads(input.files); } input.value = ''; }
 	async function startMultipleUploads(fileList: FileList) {
-        isUploading = true;
+        isUploading = true; 
         const newUploads = Array.from(fileList).map(file => ({ id: Date.now() + Math.random(), file, progress: 0, status: 'preparing' as const, path: (file as any).webkitRelativePath || file.name }));
         uploadQueue = [...uploadQueue, ...newUploads];
         const dirPaths = new Set<string>();
@@ -177,6 +288,7 @@
             const createFolderPromises = Array.from(dirPaths).map(path => fetchApi(`/api/folders/structure`, { method: 'POST', body: JSON.stringify({ path: `${currentPath}/${path}`.replace(/^\//, '') }) }));
             await Promise.allSettled(createFolderPromises);
         }
+        console.log(dirPaths);
         uploadQueue.forEach(item => { if (item.status === 'preparing') item.status = 'uploading'; });
         uploadQueue = [...uploadQueue];
         const uploadPromises = newUploads.map(uploadItem => startSingleUpload(uploadItem));
@@ -192,7 +304,16 @@
             const pathParts = (uploadItem.path || '').split('/');
             pathParts.pop();
             const folderPath = pathParts.join('/');
-            const destinationPath = currentPath ? `/${currentPath}/${folderPath}`.replace(/^\//, '') : `/${folderPath}`;
+            // const destinationPath = currentPath ? `/${currentPath}/${folderPath}`.replace(/^\//, '') : `/${folderPath}`;
+            let destinationPath = '';
+            if (currentPath && folderPath) {
+                destinationPath = `${currentPath}/${folderPath}`;
+            } else if (currentPath) {
+                destinationPath = `${currentPath}`;
+            } else if (folderPath) {
+                destinationPath = `/${folderPath}`;
+            }
+            console.log("path part:", pathParts, "Current:", currentPath, "folder:", folderPath, "destination:", destinationPath);
             const upload = new tus.Upload(uploadItem.file, {
                 endpoint: `http://localhost:8080/uploads/`,
                 retryDelays: [0, 3000, 5000],
@@ -264,23 +385,27 @@
     }
     async function handleDownload(item: FileItem) {
         try {
-            const token = localStorage.getItem('jwt_token');
             const endpoint = item.isDir ? 'download-folder' : 'download';
-            // The backend requires the token for auth, but it's passed via middleware, not query params now.
-            // fetchApi handles the Authorization header automatically.
-            const downloadUrl = `http://localhost:8080/api/${endpoint}/${item.path}`;
-            const res = await fetchApi(downloadUrl, {}); // Pass true to get raw response
+            // Remove the full URL construction - let fetchApi handle the base URL
+            const downloadUrl = `/api/${endpoint}/${item.path}`;
+            const res = await fetchApi(downloadUrl, {});
+            
             if (!res.ok) {
                 let errorMessage = `Server responded with status ${res.status}`;
-                try { const errorData = await res.json(); errorMessage = errorData.error || errorMessage; } catch (e) { errorMessage = await res.text(); }
+                try { 
+                    const errorData = await res.json(); 
+                    errorMessage = errorData.error || errorMessage; 
+                } catch (e) { 
+                    errorMessage = await res.text(); 
+                }
                 throw new Error(errorMessage);
             }
+            
             const blob = await res.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.style.display = 'none';
             a.href = url;
-            // --- MODIFIED: Simplified download name logic ---
             a.download = item.name + (item.isDir ? '.zip' : '');
             document.body.appendChild(a);
             a.click();
@@ -314,6 +439,51 @@
 	</div>
 {/if}
 
+<!-- Share Modal -->
+{#if showShareModal}
+	<div class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50" role="dialog" aria-modal="true" tabindex="0" on:keydown={(e) => { if (e.key === 'Escape') closeShareModal(); }}>
+        <div class="relative bg-primary-800 p-8 rounded-xl w-11/12 max-w-md border border-primary-700 text-primary-50" transition:fly={{ y: -20, duration: 300 }}>
+            <h3 class="text-xl font-semibold mb-6">
+                {#if shareModalItem}
+                    Share "{shareModalItem.name}"
+                {:else}
+                    Share Selected Items ({selectedItems.size})
+                {/if}
+            </h3>
+            <form on:submit|preventDefault={shareModalItem ? handleShare : handleBulkShare} class="flex flex-col gap-4">
+                <input type="text" bind:value={shareUsername} placeholder="Enter username..." required
+                    class="px-3 py-3 rounded-lg border border-primary-600 bg-primary-900 text-primary-50 text-base focus:border-accent-500 focus:outline-none" />
+                
+                <div>
+                    <label class="text-sm text-primary-300 gap-2 flex flex-col">
+                        <div>Permission:</div>
+                        <select bind:value={sharePermission} class="px-3 py-3 rounded-lg border border-primary-600 bg-primary-900 text-primary-50 text-base focus:border-accent-500 focus:outline-none">
+                            <option value="read">Read Only</option>
+                            {#if shareModalItem?.isDir || selectedItems.size > 0}
+                                <option value="write">Read & Write</option>
+                            {/if}
+                        </select>
+                    </label>
+                </div>
+                
+                <button type="submit" class="px-3 py-3 rounded-lg bg-accent-500 text-white font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={isSharing}>
+                    {#if isSharing}
+                        Sharing...
+                    {:else}
+                        <div class="flex items-center gap-2 justify-center">
+                            <Share size=16 />
+                            Share {shareModalItem ? 'Item' : `${selectedItems.size} Items`}
+                        </div>
+                    {/if}
+                </button>
+            </form>
+            <button type="button" class="absolute top-3 right-3 p-1 text-primary-400 hover:text-primary-200" on:click={closeShareModal}>
+                <X size=20 />
+            </button>
+        </div>
+	</div>
+{/if}
+
 <!-- Selection Action Bar -->
 {#if inSelectionMode}
     <div class="fixed bottom-8 left-1/2 transform -translate-x-1/2 max-w-2xl bg-primary-800 space-x-4 text-white rounded-xl  px-6 py-4 flex justify-between items-center z-50 shadow-2xl border border-primary-600" transition:fly={{ y: 20, duration: 300 }}>
@@ -324,6 +494,9 @@
 			</button>
         </div>
         <div class="flex gap-3">
+            <button class="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-700 text-white font-medium border border-primary-600 hover:bg-primary-600 transition-colors" on:click={() => { shareModalItem = null; showShareModal = true; }}>
+				<Share size=16/> Share
+			</button>
             <button class="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-700 text-white font-medium border border-primary-600 hover:bg-primary-600 transition-colors" on:click={handleBulkDownload}>
 				<Download size=16/> Download
 			</button>
@@ -470,7 +643,7 @@
 			</div>
 			
 			{#each folders as folder (folder.id)}
-				<div class="grid grid-cols-[auto_3fr_1fr_1.5fr_auto] items-center px-6 py-4 border-b border-primary-700 last:border-b-0 hover:bg-primary-700 transition-colors cursor-pointer {selectedItems.has(folder.id) ? 'bg-primary-600' : ''} {draggedItem && draggedItem.id !== folder.id ? 'outline-2 outline-dashed outline-accent-500' : ''}" 
+				<div class="grid grid-cols-[auto_3fr_1fr_1.5fr_auto] items-center px-6 py-4 border-b border-primary-700 last:border-b-0 hover:bg-primary-700 transition-colors cursor-pointer group {selectedItems.has(folder.id) ? 'bg-primary-600' : ''} {draggedItem && draggedItem.id !== folder.id ? 'outline-2 outline-dashed outline-accent-500' : ''}" 
 					 on:click={()=>goto(`/files?path=${folder.path}`)} 
 					 on:dragover|preventDefault 
 					 on:drop|preventDefault={()=>handleDrop(folder)} 
@@ -503,6 +676,9 @@
 								<CornerLeftUp size=18/>
 							</button>
 						{/if}
+						<button class="p-1 text-primary-400 hover:text-accent-500 transition-colors" on:click|preventDefault|stopPropagation={() => openShareModal(folder)} title="Share folder">
+							<Share size=18/>
+						</button>
 						<button class="p-1 text-primary-400 hover:text-accent-500 transition-colors" on:click|preventDefault|stopPropagation={() => handleDownload(folder)} title="Download folder">
 							<Download size=18/>
 						</button>
@@ -512,7 +688,7 @@
 			
 			{#each files as file (file.id)}
 				<!-- Add tabindex="0" to make the interactive row focusable -->
-				<div class="grid grid-cols-[auto_3fr_1fr_1.5fr_auto] items-center px-6 py-4 border-b border-primary-700 last:border-b-0 hover:bg-primary-700 transition-colors {selectedItems.has(file.id) ? 'bg-primary-600' : ''} {draggedItem?.id === file.id ? 'opacity-50' : ''}"
+				<div class="grid grid-cols-[auto_3fr_1fr_1.5fr_auto] items-center px-6 py-4 border-b border-primary-700 last:border-b-0 hover:bg-primary-700 transition-colors group {selectedItems.has(file.id) ? 'bg-primary-600' : ''} {draggedItem?.id === file.id ? 'opacity-50' : ''}"
 					draggable="true"
 					on:dragstart={()=>handleDragStart(file)}
 					on:dragend={handleDragEnd}
@@ -536,12 +712,15 @@
 					
 					<div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
 						{#if currentPath}
-							<button class="p-1 text-primary-400 hover:text-accent-500 transition-colors" on:click|preventDefault|stopPropagation={() => handleMoveUp(file)} title="Move Up">
+							<button class="text-primary-400 hover:text-accent-500 transition-colors" on:click|preventDefault|stopPropagation={() => handleMoveUp(file)} title="Move Up">
 								<CornerLeftUp size=18/>
 							</button>
 						{/if}
-						<button class="p-1 text-primary-400 hover:text-accent-500 transition-colors" on:click|preventDefault|stopPropagation={() => handleDownload(file)} title="Download file">
-							<Download size=18/>
+						<button class=" text-primary-400 hover:text-accent-500 transition-colors cursor-pointer" on:click|preventDefault|stopPropagation={() => openShareModal(file)} title="Share file">
+							<Share size=20/>
+						</button>
+						<button class=" text-primary-400 hover:text-accent-500 transition-colors cursor-pointer" on:click|preventDefault|stopPropagation={() => handleDownload(file)} title="Download file">
+							<Download size=20/>
 						</button>
 					</div>
 				</div>
