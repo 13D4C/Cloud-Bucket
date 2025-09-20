@@ -215,8 +215,8 @@
     <div class={cn(styles.card.base, styles.card.padding)}>
       <div class="flex items-center justify-between">
         <div>
-          <p class={styles.text.small}>Active Users</p>
-          <p class="text-2xl font-bold text-primary-100 mt-1">{stats.activeUsers}</p>
+          <p class={styles.text.small}>Normal Users</p>
+          <p class="text-2xl font-bold text-primary-100 mt-1"> {users.filter(u => u.role === 'User').length}</p>
         </div>
         <div class="p-3 bg-green-500/10 rounded-lg">
           <Activity class="w-6 h-6 text-green-400" />
