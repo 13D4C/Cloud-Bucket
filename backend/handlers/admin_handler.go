@@ -273,6 +273,118 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
 }
 
+// Settings structures
+type SystemSettings struct {
+	SiteName                 string   `json:"siteName"`
+	SiteDescription          string   `json:"siteDescription"`
+	MaintenanceMode          bool     `json:"maintenanceMode"`
+	AllowRegistration        bool     `json:"allowRegistration"`
+	MaxFileSize              int64    `json:"maxFileSize"`
+	AllowedFileTypes         []string `json:"allowedFileTypes"`
+	RequireEmailVerification bool     `json:"requireEmailVerification"`
+	SupportEmail             string   `json:"supportEmail"`
+}
+
+type StorageSettings struct {
+	DefaultUserQuota        int64 `json:"defaultUserQuota"`
+	MaxUserQuota            int64 `json:"maxUserQuota"`
+	AutoCleanupEnabled      bool  `json:"autoCleanupEnabled"`
+	CleanupDays             int   `json:"cleanupDays"`
+	StorageWarningThreshold int   `json:"storageWarningThreshold"`
+	CompressionEnabled      bool  `json:"compressionEnabled"`
+}
+
+type SecuritySettings struct {
+	SessionTimeout        int  `json:"sessionTimeout"`
+	PasswordMinLength     int  `json:"passwordMinLength"`
+	RequireStrongPassword bool `json:"requireStrongPassword"`
+	MaxLoginAttempts      int  `json:"maxLoginAttempts"`
+	LockoutDuration       int  `json:"lockoutDuration"`
+	TwoFactorEnabled      bool `json:"twoFactorEnabled"`
+	AutoBackupEnabled     bool `json:"autoBackupEnabled"`
+	BackupRetentionDays   int  `json:"backupRetentionDays"`
+}
+
+type AllSettings struct {
+	System   SystemSettings   `json:"system"`
+	Storage  StorageSettings  `json:"storage"`
+	Security SecuritySettings `json:"security"`
+}
+
+// GetSettings retrieves all system settings
+func (h *AdminHandler) GetSettings(c *gin.Context) {
+	// For now, return default settings
+	// In a real implementation, you would load these from a database or config file
+	settings := AllSettings{
+		System: SystemSettings{
+			SiteName:                 "IT Cloud Storage",
+			SiteDescription:          "Secure file storage and sharing platform",
+			MaintenanceMode:          false,
+			AllowRegistration:        true,
+			MaxFileSize:              100, // MB
+			AllowedFileTypes:         []string{"pdf", "doc", "docx", "txt", "jpg", "png", "gif", "zip"},
+			RequireEmailVerification: false,
+			SupportEmail:             "admin@itcloud.com",
+		},
+		Storage: StorageSettings{
+			DefaultUserQuota:        5000,  // MB
+			MaxUserQuota:            50000, // MB
+			AutoCleanupEnabled:      true,
+			CleanupDays:             30,
+			StorageWarningThreshold: 80, // percentage
+			CompressionEnabled:      true,
+		},
+		Security: SecuritySettings{
+			SessionTimeout:        24, // hours
+			PasswordMinLength:     8,
+			RequireStrongPassword: true,
+			MaxLoginAttempts:      5,
+			LockoutDuration:       15, // minutes
+			TwoFactorEnabled:      false,
+			AutoBackupEnabled:     true,
+			BackupRetentionDays:   30,
+		},
+	}
+
+	c.JSON(http.StatusOK, settings)
+}
+
+// UpdateSettings updates system settings
+func (h *AdminHandler) UpdateSettings(c *gin.Context) {
+	var settings AllSettings
+	if err := c.ShouldBindJSON(&settings); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	// Validate settings
+	if settings.System.MaxFileSize < 1 || settings.System.MaxFileSize > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Max file size must be between 1 and 1000 MB"})
+		return
+	}
+
+	if settings.Storage.DefaultUserQuota < 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Default user quota must be at least 100 MB"})
+		return
+	}
+
+	if settings.Storage.MaxUserQuota < settings.Storage.DefaultUserQuota {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Max user quota must be greater than default quota"})
+		return
+	}
+
+	if settings.Security.PasswordMinLength < 6 || settings.Security.PasswordMinLength > 32 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password minimum length must be between 6 and 32 characters"})
+		return
+	}
+
+	// In a real implementation, you would save these settings to a database or config file
+	// For now, we'll just return success
+	log.Printf("Settings updated: %+v", settings)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Settings updated successfully"})
+}
+
 // Helper function to join strings
 func joinStrings(strs []string, sep string) string {
 	result := ""
