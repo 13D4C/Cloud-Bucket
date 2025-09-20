@@ -61,7 +61,7 @@ func main() {
 	fileHandler := handlers.NewFileHandler(db)
 	adminHandler := handlers.NewAdminHandler(db)
 
-	router.POST("/register", authHandler.Register)
+	router.POST("/auth/register", authHandler.Register)
 	router.POST("/login", authHandler.Login)
 	router.Any("/uploads/*path", gin.WrapH(http.StripPrefix("/uploads/", tusdHandler)))
 
@@ -107,7 +107,19 @@ func main() {
 			admin.GET("/stats", adminHandler.GetSystemStats)
 			admin.PUT("/users/:id", adminHandler.UpdateUser)
 			admin.DELETE("/users/:id", adminHandler.DeleteUser)
+			admin.GET("/settings", adminHandler.GetSettings)
+			admin.PUT("/settings", adminHandler.UpdateSettings)
 		}
+
+		api.POST("/share", fileHandler.ShareItem)
+		api.POST("/unshare", fileHandler.UnshareItem)
+		api.GET("/share-info", fileHandler.ListAllSharedItems)
+
+		// Shared item access routes
+		api.GET("/shared-files/:fileId/download", fileHandler.DownloadSharedFile)
+		api.GET("/shared-folders/:folderId/download", fileHandler.DownloadSharedFolder)
+		api.GET("/shared-folders/:folderId/contents", fileHandler.ListSharedFolderContents)
+		api.POST("/shared-folders/finalize-upload", fileHandler.FinalizeSharedFolderUpload)
 
 	}
 
