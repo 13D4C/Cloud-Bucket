@@ -365,7 +365,6 @@
             <select id="edit-status" bind:value={editForm.status} class="w-full bg-primary-900 border border-primary-700 rounded-md px-3 py-2 text-primary-100 focus:border-accent-500 focus:ring-accent-500">
               <option value="active">Active</option>
               <option value="disabled">Disabled</option>
-              <option value="suspended">Suspended</option>
             </select>
           </div>
         </div>
