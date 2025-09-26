@@ -99,6 +99,32 @@ func (h *FileHandler) getUserId(username string) (int, error) {
 	return id, nil
 }
 
+// getUserQuotaInfo returns user's quota limit and used quota
+func (h *FileHandler) getUserQuotaInfo(userID int) (quotaLimit int64, quotaUsed int64, err error) {
+	err = h.db.QueryRow("SELECT USER_QUOTA, USED_QUOTA FROM USERS WHERE USER_ID = ?", userID).Scan(&quotaLimit, &quotaUsed)
+	return quotaLimit, quotaUsed, err
+}
+
+// updateUserQuota updates the user's used quota by adding the specified amount
+func (h *FileHandler) updateUserQuota(tx *sql.Tx, userID int, sizeChange int64) error {
+	_, err := tx.Exec("UPDATE USERS SET USED_QUOTA = USED_QUOTA + ? WHERE USER_ID = ?", sizeChange, userID)
+	return err
+}
+
+// checkQuotaLimit verifies if the user has enough quota for the new file
+func (h *FileHandler) checkQuotaLimit(userID int, fileSize int64) error {
+	quotaLimit, quotaUsed, err := h.getUserQuotaInfo(userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user quota info: %w", err)
+	}
+
+	if quotaUsed+fileSize > quotaLimit {
+		return fmt.Errorf("quota exceeded: would use %d bytes but limit is %d bytes", quotaUsed+fileSize, quotaLimit)
+	}
+
+	return nil
+}
+
 // --- Core File Operations ---
 
 func (h *FileHandler) ListFiles(c *gin.Context) {
@@ -337,6 +363,12 @@ func (h *FileHandler) FinalizeUpload(c *gin.Context) {
 		return
 	}
 
+	// Check quota limit before processing upload
+	if err := h.checkQuotaLimit(userID, fileInfo.Size()); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+
 	// Use transaction for database operations
 	tx, err := h.db.Begin()
 	if err != nil {
@@ -353,6 +385,13 @@ func (h *FileHandler) FinalizeUpload(c *gin.Context) {
 	}
 
 	newFileID, _ := res.LastInsertId()
+
+	// Update user's quota usage
+	if err := h.updateUserQuota(tx, userID, fileInfo.Size()); err != nil {
+		log.Printf("Failed to update user quota: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update quota usage"})
+		return
+	}
 
 	// Auto-share the new file if it's uploaded to shared folders
 	newFilePath := filepath.ToSlash(filepath.Join(payload.DestinationPath, tusInfo.MetaData.Filename))
@@ -380,14 +419,40 @@ func (h *FileHandler) FinalizeUpload(c *gin.Context) {
 
 	newFileLocation := filepath.Join(destinationFolder, fmt.Sprintf("%d", newFileID))
 	if err := os.Rename(sourceFile, newFileLocation); err != nil {
-		// Rollback database entry if physical move fails
+		// Rollback database entry and quota if physical move fails
 		h.db.Exec("DELETE FROM FILE_LIST WHERE FILE_ID = ?", newFileID)
+		h.db.Exec("UPDATE USERS SET USED_QUOTA = USED_QUOTA - ? WHERE USER_ID = ?", fileInfo.Size(), userID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to move file"})
 		return
 	}
 
 	os.Remove(sourceInfo)
 	c.JSON(http.StatusOK, gin.H{"message": "File finalized successfully"})
+}
+
+// GetQuotaInfo returns the current quota information for the authenticated user
+func (h *FileHandler) GetQuotaInfo(c *gin.Context) {
+	username, ok := getUsername(c)
+	if !ok {
+		return
+	}
+	userID, err := h.getUserId(username)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+
+	quotaLimit, quotaUsed, err := h.getUserQuotaInfo(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get quota information"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"quotaLimit":     quotaLimit,
+		"quotaUsed":      quotaUsed,
+		"quotaAvailable": quotaLimit - quotaUsed,
+	})
 }
 
 func (h *FileHandler) MoveItem(c *gin.Context) {
@@ -762,8 +827,16 @@ func (h *FileHandler) PermanentDeleteItem(c *gin.Context) {
 
 	var fileID int
 	var filePath string
-	err = tx.QueryRow("SELECT FILE_ID, FILE_PATH FROM FILE_LIST WHERE OWNER_ID = ? AND FILE_NAME = ? AND FILE_PATH = ? AND STATUS = 'trashed'", userID, baseName, dirName).Scan(&fileID, &filePath)
+	var fileSize int64
+	err = tx.QueryRow("SELECT FILE_ID, FILE_PATH, FILE_SIZE FROM FILE_LIST WHERE OWNER_ID = ? AND FILE_NAME = ? AND FILE_PATH = ? AND STATUS = 'trashed'", userID, baseName, dirName).Scan(&fileID, &filePath, &fileSize)
 	if err == nil { // It's a file
+		// Update quota before deleting file record
+		if err := h.updateUserQuota(tx, userID, -fileSize); err != nil {
+			log.Printf("Failed to update quota on permanent delete: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update quota"})
+			return
+		}
+
 		_, execErr := tx.Exec("DELETE FROM FILE_LIST WHERE FILE_ID = ?", fileID)
 		if execErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "DB delete failed"})
@@ -788,25 +861,39 @@ func (h *FileHandler) PermanentDeleteItem(c *gin.Context) {
 func (h *FileHandler) deleteFolderRecursive(tx *sql.Tx, userID int, username, folderName, path string) error {
 	fullPath := filepath.ToSlash(filepath.Join(path, folderName))
 
-	rows, err := tx.Query("SELECT FILE_ID FROM FILE_LIST WHERE OWNER_ID = ? AND FILE_PATH = ?", userID, fullPath)
+	// Get file info including sizes for quota update
+	rows, err := tx.Query("SELECT FILE_ID, FILE_SIZE FROM FILE_LIST WHERE OWNER_ID = ? AND FILE_PATH = ?", userID, fullPath)
 	if err != nil {
 		return err
 	}
-	var fileIDs []int
+	var fileInfo []struct {
+		id   int
+		size int64
+	}
 	for rows.Next() {
 		var id int
-		if err := rows.Scan(&id); err == nil {
-			fileIDs = append(fileIDs, id)
+		var size int64
+		if err := rows.Scan(&id, &size); err == nil {
+			fileInfo = append(fileInfo, struct {
+				id   int
+				size int64
+			}{id, size})
 		}
 	}
 	rows.Close()
 
-	for _, id := range fileIDs {
-		_, err := tx.Exec("DELETE FROM FILE_LIST WHERE FILE_ID = ?", id)
+	for _, info := range fileInfo {
+		// Update quota before deleting file record
+		if err := h.updateUserQuota(tx, userID, -info.size); err != nil {
+			log.Printf("Failed to update quota on folder delete: %v", err)
+			return err
+		}
+
+		_, err := tx.Exec("DELETE FROM FILE_LIST WHERE FILE_ID = ?", info.id)
 		if err != nil {
 			return err
 		}
-		physicalPath, _ := utils.GetSafePathForUser(username, filepath.Join(fullPath, fmt.Sprintf("%d", id)))
+		physicalPath, _ := utils.GetSafePathForUser(username, filepath.Join(fullPath, fmt.Sprintf("%d", info.id)))
 		os.Remove(physicalPath)
 	}
 
@@ -1778,12 +1865,26 @@ func (h *FileHandler) FinalizeSharedFolderUpload(c *gin.Context) {
 		return
 	}
 
+	// Check quota limit for folder owner before processing upload
+	if err := h.checkQuotaLimit(ownerID, fileInfo.Size()); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf("Folder owner's %s", err.Error())})
+		return
+	}
+
 	// Construct destination path within shared folder
 	baseFolderPath := filepath.ToSlash(filepath.Join(folderPath, folderName))
 	destinationPath := filepath.ToSlash(filepath.Join(baseFolderPath, payload.RelativePath))
 
+	// Use transaction for database operations
+	tx, err := h.db.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database transaction could not be started"})
+		return
+	}
+	defer tx.Rollback()
+
 	// Insert file record under owner's account
-	res, err := h.db.Exec("INSERT INTO FILE_LIST (OWNER_ID, FILE_NAME, FILE_TYPE, FILE_SIZE, FILE_PATH, STATUS) VALUES (?, ?, ?, ?, ?, 'active')",
+	res, err := tx.Exec("INSERT INTO FILE_LIST (OWNER_ID, FILE_NAME, FILE_TYPE, FILE_SIZE, FILE_PATH, STATUS) VALUES (?, ?, ?, ?, ?, 'active')",
 		ownerID, tusInfo.MetaData.Filename, tusInfo.MetaData.Filetype, fileInfo.Size(), destinationPath)
 	if err != nil {
 		log.Printf("DB Error on shared folder finalize: %v", err)
@@ -1792,6 +1893,20 @@ func (h *FileHandler) FinalizeSharedFolderUpload(c *gin.Context) {
 	}
 
 	newFileID, _ := res.LastInsertId()
+
+	// Update owner's quota usage
+	if err := h.updateUserQuota(tx, ownerID, fileInfo.Size()); err != nil {
+		log.Printf("Failed to update owner quota: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update quota usage"})
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit file upload"})
+		return
+	}
+
+	// Move physical file after successful database commit
 	destinationFolder, err := utils.GetSafePathForUser(ownerUsername, destinationPath)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid destination path"})
@@ -1805,7 +1920,9 @@ func (h *FileHandler) FinalizeSharedFolderUpload(c *gin.Context) {
 
 	newFileLocation := filepath.Join(destinationFolder, fmt.Sprintf("%d", newFileID))
 	if err := os.Rename(sourceFile, newFileLocation); err != nil {
-		h.db.Exec("DELETE FROM FILE_LIST WHERE FILE_ID = ?", newFileID) // Rollback
+		// Rollback database entry and quota if physical move fails
+		h.db.Exec("DELETE FROM FILE_LIST WHERE FILE_ID = ?", newFileID)
+		h.db.Exec("UPDATE USERS SET USED_QUOTA = USED_QUOTA - ? WHERE USER_ID = ?", fileInfo.Size(), ownerID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to move file"})
 		return
 	}

@@ -41,6 +41,9 @@
     let sharePermission = 'read';
     let isSharing = false;
 
+    // --- Quota State ---
+    let quotaInfo = { quotaLimit: 0, quotaUsed: 0, quotaAvailable: 0 };
+
 	// --- Computed State ---
 	$: currentPath = $page.url.searchParams.get('path') || '';
 	$: inSelectionMode = selectedItems.size > 0;
@@ -90,7 +93,19 @@
 			error_message = `Could not load items: ${error.message}`;
 		}
 	}
-	$: if ($page.url) { fetchData(); selectedItems = new Set(); }
+
+    async function fetchQuotaInfo() {
+        try {
+            const res = await fetchApi('/api/quota');
+            if (res.ok) {
+                quotaInfo = await res.json();
+            }
+        } catch (error: any) {
+            console.error("Quota fetch error:", error);
+        }
+    }
+
+	$: if ($page.url) { fetchData(); fetchQuotaInfo(); selectedItems = new Set(); error_message = ''; }
 
 	// --- Handlers for Selection ---
     function toggleSelect(id: string) {
@@ -126,6 +141,7 @@
             });
             selectedItems = new Set();
             await fetchData();
+            await fetchQuotaInfo(); // Refresh quota after deletion
         } catch (e: any) {
             alert(`Error moving items to trash: ${e.message}`);
         }
@@ -266,14 +282,91 @@
 	// --- Drag & Drop Upload Handlers ---
     function handleUploadDragOver(event: DragEvent) { event.preventDefault(); if (!draggedItem) { isDraggingOver = true; } }
     function handleUploadDragLeave() { isDraggingOver = false; }
-    function handleUploadDrop(event: DragEvent) { event.preventDefault(); isDraggingOver = false; if (!draggedItem && event.dataTransfer?.files) { startMultipleUploads(event.dataTransfer.files); } }
+    async function handleUploadDrop(event: DragEvent) { 
+        event.preventDefault(); 
+        isDraggingOver = false; 
+        if (!draggedItem && event.dataTransfer?.files) { 
+            const fileArray = Array.from(event.dataTransfer.files);
+            await startMultipleUploadsFromArray(fileArray); 
+        } 
+    }
 
 	// --- Upload Logic ---
-	function handleFileSelect(event: Event) { const input = event.target as HTMLInputElement; if (input.files) { startMultipleUploads(input.files); } input.value = ''; }
-    function handleFolderSelect(event: Event) { const input = event.target as HTMLInputElement; if (input.files) { startMultipleUploads(input.files); } input.value = ''; }
-	async function startMultipleUploads(fileList: FileList) {
+    
+    // Check user quota and validate files before upload
+    async function checkQuotaAndValidateFiles(fileList: FileList): Promise<{ valid: boolean; error?: string }> {
+        try {
+            const res = await fetchApi('/api/quota');
+            if (!res.ok) {
+                return { valid: false, error: 'Could not check quota limits' };
+            }
+            const quota = await res.json();
+            
+            const totalFileSize = Array.from(fileList).reduce((sum, file) => sum + file.size, 0);
+            const availableSpace = quota.quotaLimit - quota.quotaUsed;
+            
+            if (totalFileSize > availableSpace) {
+                const formatBytes = (bytes: number) => {
+                    if (bytes === 0) return '0 B';
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+                };
+                
+                return { 
+                    valid: false, 
+                    error: `Not enough storage space. Files need ${formatBytes(totalFileSize)} but only ${formatBytes(availableSpace)} available.` 
+                };
+            }
+            
+            return { valid: true };
+        } catch (error: any) {
+            return { valid: false, error: `Error checking quota: ${error.message}` };
+        }
+    }
+
+    function handleFileSelect(event: Event) { 
+        const input = event.target as HTMLInputElement; 
+        if (input.files && input.files.length > 0) { 
+            // Create a copy of the files array before clearing the input
+            const fileArray = Array.from(input.files);
+            input.value = ''; // Clear input immediately after copying files
+            startMultipleUploadsFromArray(fileArray); 
+        } else {
+            input.value = '';
+        }
+    }
+    function handleFolderSelect(event: Event) { 
+        const input = event.target as HTMLInputElement; 
+        if (input.files && input.files.length > 0) { 
+            const fileArray = Array.from(input.files);
+            input.value = '';
+            startMultipleUploadsFromArray(fileArray); 
+        } else {
+            input.value = '';
+        }
+    }
+    async function startMultipleUploadsFromArray(fileArray: File[]) {
+        // Convert array to FileList-like object for quota checking
+        const fileListLike = {
+            length: fileArray.length,
+            item: (index: number) => fileArray[index] || null,
+            [Symbol.iterator]: () => fileArray[Symbol.iterator](),
+            ...fileArray.reduce((obj, file, index) => ({ ...obj, [index]: file }), {})
+        } as FileList;
+        
+        // Check quota limits before starting upload
+        const validation = await checkQuotaAndValidateFiles(fileListLike);
+        if (!validation.valid) {
+            error_message = validation.error || 'Upload validation failed';
+            return;
+        }
+
         isUploading = true; 
-        const newUploads = Array.from(fileList).map(file => ({ id: Date.now() + Math.random(), file, progress: 0, status: 'preparing' as const, path: (file as any).webkitRelativePath || file.name }));
+        const newUploads = fileArray.map(file => {
+            return { id: Date.now() + Math.random(), file, progress: 0, status: 'preparing' as const, path: (file as any).webkitRelativePath || file.name };
+        });
         uploadQueue = [...uploadQueue, ...newUploads];
         const dirPaths = new Set<string>();
         newUploads.forEach(upload => {
@@ -288,16 +381,22 @@
             const createFolderPromises = Array.from(dirPaths).map(path => fetchApi(`/api/folders/structure`, { method: 'POST', body: JSON.stringify({ path: `${currentPath}/${path}`.replace(/^\//, '') }) }));
             await Promise.allSettled(createFolderPromises);
         }
-        console.log(dirPaths);
         uploadQueue.forEach(item => { if (item.status === 'preparing') item.status = 'uploading'; });
         uploadQueue = [...uploadQueue];
         const uploadPromises = newUploads.map(uploadItem => startSingleUpload(uploadItem));
         await Promise.allSettled(uploadPromises);
         await fetchData();
+        await fetchQuotaInfo(); // Refresh quota after uploads
         setTimeout(() => {
             uploadQueue = uploadQueue.filter(item => item.status !== 'done' && item.status !== 'error');
             if (uploadQueue.length === 0) { isUploading = false; }
         }, 5000);
+    }
+
+	async function startMultipleUploads(fileList: FileList) {
+        // Convert FileList to array and delegate to the array version
+        const fileArray = Array.from(fileList);
+        return startMultipleUploadsFromArray(fileArray);
     }
     function startSingleUpload(uploadItem: typeof uploadQueue[0]) {
         return new Promise<void>((resolve, reject) => {
@@ -313,7 +412,6 @@
             } else if (folderPath) {
                 destinationPath = `/${folderPath}`;
             }
-            console.log("path part:", pathParts, "Current:", currentPath, "folder:", folderPath, "destination:", destinationPath);
             const upload = new tus.Upload(uploadItem.file, {
                 endpoint: `http://localhost:8080/uploads/`,
                 retryDelays: [0, 3000, 5000],
@@ -548,6 +646,24 @@
 				</label>
 			</div>
 		</div>
+		
+		<!-- Storage Quota Display -->
+		{#if quotaInfo.quotaLimit > 0}
+			<div class="mb-6 bg-primary-800 border border-primary-600 rounded-lg p-4">
+				<div class="flex justify-between items-center mb-2">
+					<span class="text-sm text-primary-300">Storage Usage</span>
+					<span class="text-sm text-primary-400">
+						{formatBytes(quotaInfo.quotaUsed)} / {formatBytes(quotaInfo.quotaLimit)}
+					</span>
+				</div>
+				<div class="w-full h-2 bg-primary-700 rounded-full overflow-hidden">
+					<div 
+						class="h-full transition-all duration-300 {quotaInfo.quotaUsed / quotaInfo.quotaLimit > 0.9 ? 'bg-red-500' : quotaInfo.quotaUsed / quotaInfo.quotaLimit > 0.7 ? 'bg-yellow-500' : 'bg-accent-500'}"
+						style="width: {Math.min(100, (quotaInfo.quotaUsed / quotaInfo.quotaLimit) * 100)}%"
+					></div>
+				</div>
+			</div>
+		{/if}
 		
 		{#if error_message}
 			<div class="bg-accent-500 bg-opacity-10 text-accent-300 border border-accent-500 px-4 py-4 rounded-lg mb-6 flex items-center gap-3">

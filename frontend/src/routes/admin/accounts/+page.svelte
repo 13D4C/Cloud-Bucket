@@ -237,7 +237,7 @@
             </div>
             <span class={cn(
               'text-xs px-2 py-1 rounded-full font-medium',
-              user.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-primary-700 text-primary-300'
+              user.status === 'Active' ? 'bg-green-500/10 text-green-400' : 'bg-primary-700 text-primary-300'
             )}>
               {user.status}
             </span>
@@ -363,8 +363,8 @@
           <div>
             <label for="edit-status" class="block text-sm font-medium text-primary-300 mb-1">Status</label>
             <select id="edit-status" bind:value={editForm.status} class="w-full bg-primary-900 border border-primary-700 rounded-md px-3 py-2 text-primary-100 focus:border-accent-500 focus:ring-accent-500">
-              <option value="active">Active</option>
-              <option value="disabled">Disabled</option>
+              <option value="Active">Active</option>
+              <option value="Disabled">Disabled</option>
             </select>
           </div>
         </div>

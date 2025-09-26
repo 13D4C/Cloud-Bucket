@@ -80,6 +80,7 @@ func main() {
 
 		api.POST("/move", fileHandler.MoveItem)
 		api.POST("/finalize-upload", fileHandler.FinalizeUpload)
+		api.GET("/quota", fileHandler.GetQuotaInfo)
 		api.DELETE("/items/*path", fileHandler.DeleteItem)
 		api.POST("/items/bulk-delete", fileHandler.BulkDeleteItems)
 

@@ -27,6 +27,7 @@ type UserResponse struct {
 	Email      string `json:"email"`
 	Phone      string `json:"phone"`
 	Role       string `json:"role"`
+	Status     string `json:"status"` // Add status field
 	QuotaLimit int64  `json:"quotaLimit"`
 	QuotaUsed  int64  `json:"quotaUsed"`
 }
@@ -44,6 +45,7 @@ type UpdateUserRequest struct {
 	Email      string  `json:"email,omitempty"`
 	Phone      string  `json:"phone,omitempty"`
 	Role       string  `json:"role,omitempty"`
+	Status     string  `json:"status,omitempty"`
 	QuotaLimit *int64  `json:"quotaLimit,omitempty"`
 	Password   *string `json:"password,omitempty"`
 }
@@ -93,6 +95,7 @@ func (h *AdminHandler) GetAllUsers(c *gin.Context) {
 			EMAIL, 
 			PHONE, 
 			ROLE, 
+			STATUS,
 			USER_QUOTA,
 			USED_QUOTA
 		FROM USERS;
@@ -115,6 +118,7 @@ func (h *AdminHandler) GetAllUsers(c *gin.Context) {
 			&user.Email,
 			&user.Phone,
 			&user.Role,
+			&user.Status,
 			&user.QuotaLimit,
 			&user.QuotaUsed,
 		)
@@ -137,6 +141,11 @@ func (h *AdminHandler) GetSystemStats(c *gin.Context) {
 	err := h.DB.QueryRow("SELECT COUNT(*) FROM USERS").Scan(&stats.TotalUsers)
 	if err != nil {
 		log.Printf("Error getting total users: %v", err)
+	}
+
+	err = h.DB.QueryRow("SELECT COUNT(*) FROM USERS WHERE STATUS = 'Active'").Scan(&stats.ActiveUsers)
+	if err != nil {
+		log.Printf("Error getting active users: %v", err)
 	}
 
 	// Get storage statistics
@@ -179,6 +188,15 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 	if req.Phone != "" {
 		updates = append(updates, "PHONE = ?")
 		values = append(values, req.Phone)
+	}
+
+	if req.Status != "" {
+		if req.Status != "Active" && req.Status != "Disabled" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status. Must be 'Active', 'Disabled'"})
+			return
+		}
+		updates = append(updates, "STATUS = ?")
+		values = append(values, req.Status)
 	}
 
 	if req.Role != "" {

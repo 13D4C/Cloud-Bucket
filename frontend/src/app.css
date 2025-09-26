@@ -24,6 +24,12 @@
 	--color-accent-700: #b91c1c;
 	--color-accent-800: #991b1b;
 	--color-accent-900: #7f1d1d;
+
+    --color-secondary-100: oklch(87.1% 0.15 154.449);
+    --color-secondary-200: oklch(79.2% 0.209 151.711);
+    --color-secondary-300: oklch(72.3% 0.219 149.579);
+    --color-secondary-400: oklch(62.7% 0.194 149.214);
+    --color-secondary-500: oklch(52.7% 0.154 150.069);
 }
 
 @layer base {
