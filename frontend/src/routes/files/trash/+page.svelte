@@ -1,16 +1,27 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { fetchApi } from '$lib/api';
-    import { Folder, FileText, RotateCcw, Trash2, AlertCircle } from 'lucide-svelte';
+    import { Folder, FileText, RotateCcw, Trash2, AlertCircle, Loader } from 'lucide-svelte';
     import { formatDistanceToNow } from 'date-fns';
     import { th } from 'date-fns/locale';
     import { fade } from 'svelte/transition';
 
-    let trashItems: any[] = [];
+    interface TrashItem {
+        id: string; // Add the unique ID field
+        path: string;
+        isDir: boolean;
+        name: string;
+        size?: number;
+        modified: string;
+    }
+
+    let trashItems: TrashItem[] = [];
     let error_message = '';
+    let isLoading = true;
 
     async function fetchTrashItems() {
         error_message = '';
+        isLoading = true;
         try {
             const res = await fetchApi('/api/trash');
             if (!res.ok) {
@@ -20,6 +31,8 @@
             trashItems = await res.json() || [];
         } catch (e: any) {
             error_message = e.message;
+        } finally {
+            isLoading = false;
         }
     }
     onMount(fetchTrashItems);
@@ -58,66 +71,61 @@
 	}
 </script>
 
-<div class="page-header">
-    <h1>Deleted Files</h1>
+<div class="mb-6">
+    <h1 class="text-3xl font-bold text-primary-50 m-0">Deleted Files</h1>
 </div>
-<p class="subtitle">Items in the trash can be restored or deleted forever.</p>
+<p class="text-primary-300 mt-1 mb-8">Items in the trash can be restored or deleted forever.</p>
 
-{#if error_message}
-    <div class="error-banner"><AlertCircle size=18/> {error_message}</div>
+{#if isLoading}
+    <div class="flex justify-center items-center py-16 text-primary-400">
+        <Loader class="animate-spin" size=32 />
+        <span class="ml-4 text-lg">Loading items...</span>
+    </div>
+{:else if error_message}
+    <div class="bg-red-900/20 text-red-400 border border-red-800 p-4 rounded-lg mb-4 flex items-center gap-3">
+        <AlertCircle size=18/> {error_message}
+    </div>
 {/if}
 
-<div class="trash-list-container">
-    <div class="grid-header">
-        <div class="header-name">Name</div>
-        <div class="header-actions">Actions</div>
+<div class="border border-primary-700 rounded-xl overflow-hidden bg-primary-800">
+    <div class="grid grid-cols-2 px-6 py-3 bg-primary-900 font-medium text-primary-400 uppercase text-xs tracking-wider border-b border-primary-700">
+        <div>Name</div>
+        <div>Actions</div>
     </div>
 
-    {#each trashItems as item (item.path)}
-        <div class="list-row" transition:fade|local>
-            <div class="item-name" title={item.originalName || item.name}>
-                {#if item.isDir}
-                    <Folder size=20 color="#5DADE2" />
-                {:else}
-                    <FileText size=20 color="#6C757D" />
-                {/if}
-                <span>{item.originalName || item.name}</span>
+    {#if !isLoading}
+        {#each trashItems as item (item.id)}
+            <div class="grid grid-cols-2 items-center px-6 py-4 border-b border-primary-700 transition-colors duration-200 hover:bg-primary-700 last:border-0" transition:fade|local>
+                <div class="flex items-center gap-4 font-medium text-primary-50 overflow-hidden" title={item.name}>
+                    {#if item.isDir}
+                        <Folder size=20 color="#5DADE2" />
+                    {:else}
+                        <FileText size=20 color="#6C757D" />
+                    {/if}
+                    <span class="whitespace-nowrap overflow-hidden text-ellipsis">{item.name}</span>
+                </div>
+                <div class="flex gap-4">
+                    <button 
+                        class="px-4 py-2 border border-primary-600 rounded-lg font-medium cursor-pointer flex items-center gap-2 transition-all duration-200 bg-primary-800 text-primary-300 hover:border-green-400 hover:bg-green-900/20 hover:text-green-400" 
+                        on:click={() => handleRestore(item)}
+                    >
+                        <RotateCcw size=16 /> Restore
+                    </button>
+                    <button 
+                        class="px-4 py-2 border border-primary-600 rounded-lg font-medium cursor-pointer flex items-center gap-2 transition-all duration-200 bg-primary-800 text-primary-300 hover:border-red-400 hover:bg-red-900/20 hover:text-red-400" 
+                        on:click={() => handlePermanentDelete(item)}
+                    >
+                        <Trash2 size=16 /> Delete Forever
+                    </button>
+                </div>
             </div>
-            <div class="item-actions">
-                <button class="action-btn restore" on:click={() => handleRestore(item)}>
-                    <RotateCcw size=16 /> Restore
-                </button>
-                <button class="action-btn delete" on:click={() => handlePermanentDelete(item)}>
-                    <Trash2 size=16 /> Delete Forever
-                </button>
+        {:else}
+            <div class="flex flex-col justify-center items-center text-center py-16 text-primary-400" transition:fade>
+                <Trash2 size=48 />
+                <h3 class="my-4 mb-2 text-primary-300">Your trash is empty</h3>
+                <p>Items you delete will appear here.</p>
             </div>
-        </div>
-    {:else}
-        <div class="empty-state" transition:fade>
-            <Trash2 size=48 />
-            <h3>Your trash is empty</h3>
-            <p>Items you delete will appear here.</p>
-        </div>
-    {/each}
+        {/each}
+    {/if}
 </div>
 
-<style>
-    .page-header h1 { font-size: 1.75rem; margin: 0; color: #1F2937; }
-    .subtitle { color: #6C757D; margin-top: 0.25rem; margin-bottom: 2rem; }
-    .trash-list-container { border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden; }
-    .grid-header { display: grid; grid-template-columns: 1fr auto; padding: 0.75rem 1.5rem; background-color: #F9FAFB; font-weight: 500; color: #6C757D; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.05em; border-bottom: 1px solid #E5E7EB; }
-    .list-row { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #F3F4F6; transition: background-color 0.2s; }
-    .list-row:last-child { border: none; }
-    .list-row:hover { background-color: #F9FAFB; }
-    .item-name { display: flex; align-items: center; gap: 1rem; font-weight: 500; color: #1F2937; overflow: hidden; }
-    .item-name span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .item-actions { display: flex; gap: 1rem; }
-    .action-btn { padding: 0.5rem 1rem; border: 1px solid #DEE2E6; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s; }
-    .action-btn.restore { background-color: white; color: #343A40; }
-    .action-btn.restore:hover { border-color: #4ade80; background-color: #f0fdf4; color: #166534; }
-    .action-btn.delete { background-color: white; color: #343A40; }
-    .action-btn.delete:hover { border-color: #f87171; background-color: #fef2f2; color: #991b1b; }
-    .empty-state { text-align: center; padding: 4rem; color: #6C757D; }
-    .empty-state h3 { margin: 1rem 0 0.5rem 0; color: #343A40; }
-    .error-banner { background-color: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem; }
-</style>

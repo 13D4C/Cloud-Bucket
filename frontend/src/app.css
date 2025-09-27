@@ -1,2 +1,85 @@
 @import 'tailwindcss';
-@plugin '@tailwindcss/typography';
+
+@theme {
+	/* Primary scale */
+	--color-primary-50: #f9fafb;
+	--color-primary-100: #f3f4f6;
+	--color-primary-200: #e5e7eb;
+	--color-primary-300: #d1d5db;
+	--color-primary-400: #9ca3af;
+	--color-primary-500: #6b7280;
+	--color-primary-600: #4b5563;
+	--color-primary-700: #374151;
+	--color-primary-800: #1f2937;
+	--color-primary-900: #111827;
+
+	/* Accent scale */
+	--color-accent-50: #fef2f2;
+	--color-accent-100: #fee2e2;
+	--color-accent-200: #fecaca;
+	--color-accent-300: #fca5a5;
+	--color-accent-400: #f87171;
+	--color-accent-500: #ef4444;
+	--color-accent-600: #dc2626;
+	--color-accent-700: #b91c1c;
+	--color-accent-800: #991b1b;
+	--color-accent-900: #7f1d1d;
+
+    --color-secondary-100: oklch(87.1% 0.15 154.449);
+    --color-secondary-200: oklch(79.2% 0.209 151.711);
+    --color-secondary-300: oklch(72.3% 0.219 149.579);
+    --color-secondary-400: oklch(62.7% 0.194 149.214);
+    --color-secondary-500: oklch(52.7% 0.154 150.069);
+}
+
+@layer base {
+    html {
+        font-family: 'Poppins', system-ui, -apple-system, sans-serif;
+    }
+    
+    body {
+        @apply bg-primary-900 text-primary-50;
+    }
+
+    /* Scrollbar styles */
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: #374151 #1f2937;
+    }
+
+    *::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    *::-webkit-scrollbar-track {
+        @apply bg-primary-800;
+    }
+
+    *::-webkit-scrollbar-thumb {
+        @apply bg-primary-700 rounded;
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+        @apply bg-primary-600;
+    }
+
+    /* Focus styles */
+    *:focus-visible {
+        @apply outline-2 outline-accent-500 outline-offset-2;
+    }
+
+    /* Selection styles */
+    ::selection {
+        @apply bg-accent-500 text-white;
+    }
+
+    /* Input autofill styles */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus {
+        -webkit-text-fill-color: #f9fafb;
+        -webkit-box-shadow: 0 0 0px 1000px #111827 inset;
+        transition: background-color 5000s ease-in-out 0s;
+    }
+}
