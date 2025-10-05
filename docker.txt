@@ -1,0 +1,10 @@
+
+
+How to build and run docekr image for this project 101
+
+
+
+sudo docker build -t clowncloud:1.0 .
+
+sudo docker run -d --name my-website -p 8080:8080 --env-file ./.env clowncloud:1.0
+
