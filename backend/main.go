@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/static" 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/tus/tusd/v2/pkg/filestore"
@@ -37,7 +38,7 @@ func main() {
 	router := gin.Default()
 
 	corsConfig := cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173"},
+		AllowOrigins:     []string{"http://localhost:8080","http://localhost:5173"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Tus-Resumable", "Upload-Length", "Upload-Metadata", "Upload-Offset"},
 		ExposeHeaders:    []string{"Location", "Upload-Offset", "Upload-Length"},
@@ -123,6 +124,8 @@ func main() {
 		api.POST("/shared-folders/finalize-upload", fileHandler.FinalizeSharedFolderUpload)
 
 	}
+
+	router.Use(static.Serve("/", static.LocalFile("./frontend/build", true)))
 
 	log.Println("--- ROUTES ARE SET UP. SERVER IS LISTENING ON PORT 8080 ---")
 	if err := router.Run(":8080"); err != nil {
