@@ -413,7 +413,8 @@
                 destinationPath = `/${folderPath}`;
             }
             const upload = new tus.Upload(uploadItem.file, {
-                endpoint: `http://localhost:8080/uploads/`,
+                // endpoint: `http://localhost:8080/uploads/`,
+                endpoint: `/uploads/`,
                 retryDelays: [0, 3000, 5000],
                 metadata: { filename: uploadItem.file.name, filetype: uploadItem.file.type },
                 onProgress: (bytes, total) => {

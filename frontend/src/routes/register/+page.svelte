@@ -11,7 +11,8 @@
     let isLoading = false;
 
     // แก้ไข URL นี้ถ้า API ของคุณไม่ได้อยู่ที่ localhost:8080
-    const apiBaseUrl = 'http://localhost:8080';
+    // const apiBaseUrl = 'http://localhost:8080';
+    const apiBaseUrl = '';
 
     async function handleRegister() {
         message = '';

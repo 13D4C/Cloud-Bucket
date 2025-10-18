@@ -1,7 +1,8 @@
 import { goto } from '$app/navigation';
 import { browser } from '$app/environment';
 
-const API_BASE_URL = 'http://localhost:8080';
+// const API_BASE_URL = 'http://localhost:8080';
+const API_BASE_URL = '';
 
 export async function fetchApi(path: string, options: RequestInit = {}): Promise<Response> {
     if (!browser) throw new Error('fetchApi can only be called on the client');

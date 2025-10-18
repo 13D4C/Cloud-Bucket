@@ -7,7 +7,8 @@
 	let username = '';
 	let password = '';
 	let message = '';
-	const apiBaseUrl = 'http://localhost:8080';
+    const apiBaseUrl = '';
+	// const apiBaseUrl = 'http://localhost:8080';
 
     let isLeaving = false;
 

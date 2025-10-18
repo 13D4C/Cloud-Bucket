@@ -38,11 +38,12 @@ func main() {
 	router := gin.Default()
 
 	corsConfig := cors.Config{
-		AllowOrigins:     []string{"http://localhost:8080","http://localhost:5173"},
+		// AllowOrigins:     []string{"http://localhost:8080","http://localhost:5173"},
+		AllowAllOrigins:  true,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Tus-Resumable", "Upload-Length", "Upload-Metadata", "Upload-Offset"},
 		ExposeHeaders:    []string{"Location", "Upload-Offset", "Upload-Length"},
-		AllowCredentials: true,
+		// AllowCredentials: true,
 	}
 	router.Use(cors.New(corsConfig))
 
