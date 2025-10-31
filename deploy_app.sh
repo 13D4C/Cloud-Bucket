@@ -64,7 +64,7 @@ while fuser /var/run/yum.pid >/dev/null 2>&1; do
   sleep 1
 done
 yum update -y
-yum install -y git amazon-efs-utils docker mariadb
+yum install -y git amazon-efs-utils docker mariadb105
 echo "Dependencies installed."
 
 # --- Step 2: Configure and Start Services ---
